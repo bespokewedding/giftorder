@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>訂單管理系統</title>
+    <title>Bespoke回禮訂單管理系統</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <style>
         :root {
@@ -548,9 +548,18 @@ function getCurrentMonth() {
 async function gasGet(params) {
     const url = new URL(CONFIG.GAS_URL);
     Object.keys(params).forEach(k => url.searchParams.append(k, params[k]));
-    const resp = await fetch(url.toString());
-    if (!resp.ok) throw new Error('Network error');
-    return await resp.json();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
+    try {
+        const resp = await fetch(url.toString(), { signal: controller.signal });
+        clearTimeout(timeout);
+        if (!resp.ok) throw new Error('Network error');
+        return await resp.json();
+    } catch (e) {
+        clearTimeout(timeout);
+        if (e.name === 'AbortError') throw new Error('請求逾時，請重試');
+        throw e;
+    }
 }
 
 async function gasPost(data) {
@@ -588,8 +597,9 @@ async function doLogin() {
         const result = await gasGet({ action: 'login', email: email, password: password });
         if (result.success && result.user) {
             currentUser = result.user;
-            await loadInitialData();
+            // Show app immediately, load data in background
             showApp();
+            loadInitialData(); // non-blocking
         } else {
             document.getElementById('loginError').style.display = 'block';
         }
@@ -620,16 +630,21 @@ function isAdmin() {
 async function loadInitialData() {
     showLoading();
     try {
+        // Load config first (fast, needed for forms)
         const configResult = await gasGet({ action: 'getConfig' });
         if (configResult.success) {
             configData.suppliers = configResult.suppliers || [];
             configData.items = configResult.items || [];
             configData.supplierItems = configResult.supplierItems || {};
         }
+        renderCurrentPage(); // Re-render with config data
+        
+        // Load records (may be slow with large data)
         await loadRecords();
+        renderCurrentPage(); // Re-render with records
     } catch (e) {
         console.error('Load data error:', e);
-        showToast('載入資料失敗', 'error');
+        showToast('載入資料失敗，請點擊刷新重試', 'error');
     }
     hideLoading();
 }
@@ -1795,21 +1810,25 @@ async function saveRemarkEdit(rowIndex) {
 // ============================================================
 // PAGE: 流水帳管理 (Admin)
 // ============================================================
+let ledgerCurrentPage = 1;
+const LEDGER_PAGE_SIZE = 10;
+
 function renderLedgerPage(container) {
+    ledgerCurrentPage = 1;
     container.innerHTML = `
         <div class="page-title">📒 流水帳記錄管理</div>
         <div class="filter-bar">
-            <input type="text" id="ledger-search" placeholder="搜尋..." oninput="renderLedgerTable()">
-            <select id="ledger-supplier-filter" onchange="renderLedgerTable()">
+            <input type="text" id="ledger-search" placeholder="搜尋..." oninput="ledgerCurrentPage=1; renderLedgerTable()">
+            <select id="ledger-supplier-filter" onchange="ledgerCurrentPage=1; renderLedgerTable()">
                 <option value="">全部供應商</option>
                 ${configData.suppliers.map(s => `<option value="${s}">${s}</option>`).join('')}
             </select>
-            <select id="ledger-status-filter" onchange="renderLedgerTable()">
+            <select id="ledger-status-filter" onchange="ledgerCurrentPage=1; renderLedgerTable()">
                 <option value="">全部狀態</option>
                 <option value="set">已設定</option>
                 <option value="unset">未設定</option>
             </select>
-            <input type="month" id="ledger-month-filter" onchange="renderLedgerTable()" title="篩選 Report 月份">
+            <input type="month" id="ledger-month-filter" onchange="ledgerCurrentPage=1; renderLedgerTable()" title="篩選 Report 月份">
         </div>
         <div id="ledger-table-container"></div>
     `;
@@ -1843,7 +1862,23 @@ function renderLedgerTable() {
         records = records.filter(r => !r.reportMonth);
     }
     if (monthFilter) {
-        records = records.filter(r => r.reportMonth === monthFilter);
+        // Normalize comparison: monthFilter is 'YYYY-MM', reportMonth may be various formats
+        records = records.filter(r => {
+            if (!r.reportMonth) return false;
+            // Try to extract YYYY-MM from reportMonth
+            const isoMatch = r.reportMonth.match(/(\d{4})-(\d{2})/);
+            if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}` === monthFilter;
+            // Try Chinese format: 2026年08月
+            const cnMatch = r.reportMonth.match(/(\d{4})年(\d{1,2})月/);
+            if (cnMatch) return `${cnMatch[1]}-${String(cnMatch[2]).padStart(2,'0')}` === monthFilter;
+            // Try Date.toString() format
+            const fullMatch = r.reportMonth.match(/[A-Za-z]{3}\s+([A-Za-z]{3})\s+\d{1,2}\s+(\d{4})/);
+            if (fullMatch) {
+                const months = {Jan:'01',Feb:'02',Mar:'03',Apr:'04',May:'05',Jun:'06',Jul:'07',Aug:'08',Sep:'09',Oct:'10',Nov:'11',Dec:'12'};
+                return `${fullMatch[2]}-${months[fullMatch[1]] || '01'}` === monthFilter;
+            }
+            return r.reportMonth === monthFilter;
+        });
     }
 
     const tableContainer = document.getElementById('ledger-table-container');
@@ -1852,7 +1887,22 @@ function renderLedgerTable() {
         return;
     }
 
+    // Pagination
+    const totalPages = Math.ceil(records.length / LEDGER_PAGE_SIZE);
+    if (ledgerCurrentPage > totalPages) ledgerCurrentPage = totalPages;
+    const startIdx = (ledgerCurrentPage - 1) * LEDGER_PAGE_SIZE;
+    const pageRecords = records.slice(startIdx, startIdx + LEDGER_PAGE_SIZE);
+
     tableContainer.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; padding:8px 12px; background:var(--light-bg); border-radius:6px;">
+            <span style="font-size:12px; color:#7f8c8d;">共 ${records.length} 筆記錄，第 ${ledgerCurrentPage}/${totalPages} 頁</span>
+            <div style="display:flex; gap:6px;">
+                <button class="btn btn-sm" style="padding:4px 10px;" onclick="ledgerGoPage(1)" ${ledgerCurrentPage === 1 ? 'disabled' : ''}>«</button>
+                <button class="btn btn-sm" style="padding:4px 10px;" onclick="ledgerGoPage(${ledgerCurrentPage - 1})" ${ledgerCurrentPage === 1 ? 'disabled' : ''}>‹</button>
+                <button class="btn btn-sm" style="padding:4px 10px;" onclick="ledgerGoPage(${ledgerCurrentPage + 1})" ${ledgerCurrentPage >= totalPages ? 'disabled' : ''}>›</button>
+                <button class="btn btn-sm" style="padding:4px 10px;" onclick="ledgerGoPage(${totalPages})" ${ledgerCurrentPage >= totalPages ? 'disabled' : ''}>»</button>
+            </div>
+        </div>
         <table class="data-table" style="table-layout:auto; width:100%;">
             <thead>
                 <tr>
@@ -1870,7 +1920,7 @@ function renderLedgerTable() {
                 </tr>
             </thead>
             <tbody>
-                ${records.map(r => `
+                ${pageRecords.map(r => `
                 <tr>
                     <td style="white-space:nowrap; font-size:12px;">${dateOnly(r.timestamp)}</td>
                     <td>${r.supplier || '-'}</td>
@@ -1893,7 +1943,17 @@ function renderLedgerTable() {
                 </tr>`).join('')}
             </tbody>
         </table>
+        <div style="display:flex; justify-content:center; align-items:center; margin-top:10px; gap:6px;">
+            <button class="btn btn-sm" style="padding:4px 10px;" onclick="ledgerGoPage(${ledgerCurrentPage - 1})" ${ledgerCurrentPage === 1 ? 'disabled' : ''}>上一頁</button>
+            <span style="font-size:12px; color:#7f8c8d; padding:0 10px;">${ledgerCurrentPage} / ${totalPages}</span>
+            <button class="btn btn-sm" style="padding:4px 10px;" onclick="ledgerGoPage(${ledgerCurrentPage + 1})" ${ledgerCurrentPage >= totalPages ? 'disabled' : ''}>下一頁</button>
+        </div>
     `;
+}
+
+function ledgerGoPage(page) {
+    ledgerCurrentPage = page;
+    renderLedgerTable();
 }
 
 async function toggleSubmitStatus(rowIndex, checked) {
