@@ -1,0 +1,2041 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>訂單管理系統</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <style>
+        :root {
+            --primary: #2c3e50;
+            --accent: #3498db;
+            --bg: #f5f7fa;
+            --success: #27ae60;
+            --warning: #f39c12;
+            --danger: #e74c3c;
+            --text: #2c3e50;
+            --white: #ffffff;
+            --border: #e1e8ed;
+            --light-bg: #ecf0f1;
+            --card-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+            background-color: var(--bg);
+            margin: 0;
+            padding: 0;
+            color: var(--text);
+            line-height: 1.6;
+            font-size: 14px;
+        }
+
+        /* Navigation */
+        .nav-bar {
+            background: var(--primary);
+            color: white;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        .nav-bar .brand { font-size: 16px; font-weight: bold; }
+        .nav-bar .user-info { font-size: 12px; opacity: 0.8; }
+        .nav-bar button {
+            background: rgba(255,255,255,0.15);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3);
+            padding: 6px 14px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .nav-bar button:hover { background: rgba(255,255,255,0.25); }
+
+        /* Layout */
+        .app-layout { display: flex; min-height: calc(100vh - 50px); }
+        .sidebar {
+            width: 200px;
+            background: var(--white);
+            border-right: 1px solid var(--border);
+            padding: 15px 0;
+            flex-shrink: 0;
+        }
+        .sidebar .nav-item {
+            padding: 12px 20px;
+            cursor: pointer;
+            font-size: 13px;
+            color: var(--text);
+            border-left: 3px solid transparent;
+            transition: all 0.2s;
+        }
+        .sidebar .nav-item:hover { background: var(--light-bg); }
+        .sidebar .nav-item.active {
+            background: #eaf2fd;
+            border-left-color: var(--accent);
+            color: var(--accent);
+            font-weight: bold;
+        }
+        .sidebar .nav-item.hidden { display: none; }
+
+        .main-content {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            max-height: calc(100vh - 50px);
+        }
+
+        /* Login */
+        .login-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: var(--bg);
+        }
+        .login-box {
+            background: var(--white);
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: var(--card-shadow);
+            width: 100%;
+            max-width: 380px;
+            text-align: center;
+        }
+        .login-box h2 { color: var(--primary); margin-bottom: 30px; }
+        .login-box input {
+            width: 100%;
+            padding: 12px 15px;
+            margin-bottom: 15px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .login-box .btn-login {
+            width: 100%;
+            padding: 12px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .login-box .btn-login:hover { background: #2980b9; }
+        .login-box .btn-login:disabled { background: #bdc3c7; cursor: not-allowed; }
+        .login-error { color: var(--danger); font-size: 13px; margin-top: 10px; display: none; }
+
+        /* Common */
+        .page-title { font-size: 20px; font-weight: bold; color: var(--primary); margin-bottom: 20px; }
+        .card {
+            background: var(--white);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: var(--card-shadow);
+        }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; font-size: 12px; font-weight: bold; color: #7f8c8d; margin-bottom: 5px; }
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+        .form-group textarea { resize: vertical; min-height: 80px; }
+        .form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-primary { background: var(--accent); color: white; }
+        .btn-primary:hover { background: #2980b9; }
+        .btn-success { background: var(--success); color: white; }
+        .btn-success:hover { background: #219a52; }
+        .btn-warning { background: var(--warning); color: white; }
+        .btn-warning:hover { background: #d68910; }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn-danger:hover { background: #c0392b; }
+        .btn-sm { padding: 6px 12px; font-size: 12px; }
+        .btn:disabled { background: #bdc3c7; cursor: not-allowed; }
+
+        /* Order Cards */
+        .order-card {
+            background: var(--white);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 18px;
+            margin-bottom: 15px;
+            border-left: 5px solid var(--accent);
+            transition: box-shadow 0.2s;
+        }
+        .order-card:hover { box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .order-card.delivered { border-left-color: var(--success); opacity: 0.85; }
+        .order-card .order-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+        .order-card .order-id { font-weight: bold; color: var(--accent); font-size: 15px; }
+        .order-card .order-number { font-size: 12px; color: #7f8c8d; font-weight: bold; background: var(--light-bg); padding: 2px 8px; border-radius: 4px; }
+        .order-card .order-date { font-size: 12px; color: #95a5a6; }
+        .order-card .order-body { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .order-card .field-label { font-size: 11px; color: #95a5a6; font-weight: bold; }
+        .order-card .field-value { font-size: 13px; margin-bottom: 8px; white-space: pre-wrap; word-break: break-all; }
+        .order-card .order-actions { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); display: flex; gap: 8px; flex-wrap: wrap; }
+
+        /* Badge */
+        .badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        .badge-pending { background: #ffeaa7; color: #d68910; }
+        .badge-delivered { background: #d5f5e3; color: #27ae60; }
+
+        /* Table */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .data-table th {
+            background: var(--light-bg);
+            padding: 8px 10px;
+            text-align: left;
+            font-size: 12px;
+            color: #7f8c8d;
+            border-bottom: 2px solid var(--border);
+        }
+        .data-table td {
+            padding: 8px 10px;
+            border-bottom: 1px solid var(--border);
+            font-size: 12px;
+            word-break: break-word;
+        }
+        .data-table tr:hover { background: #f8f9fa; }
+
+        /* Toggle Switch */
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #ccc;
+            transition: 0.3s;
+            border-radius: 24px;
+        }
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+        .toggle-switch input:checked + .toggle-slider { background-color: var(--success); }
+        .toggle-switch input:checked + .toggle-slider:before { transform: translateX(20px); }
+
+        /* Supplier Group */
+        .supplier-group { margin-bottom: 25px; }
+        .supplier-group-title {
+            font-size: 16px;
+            font-weight: bold;
+            color: var(--primary);
+            padding: 10px 0;
+            border-bottom: 2px solid var(--accent);
+            margin-bottom: 12px;
+        }
+
+        /* Filter Bar */
+        .filter-bar {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 15px;
+            padding: 12px;
+            background: var(--light-bg);
+            border-radius: 8px;
+            align-items: center;
+        }
+        .filter-bar input, .filter-bar select {
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        /* Loading */
+        .loading-spin {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .loading-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(255,255,255,0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+        .loading-overlay .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            padding: 20px;
+        }
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            width: 100%;
+            max-width: 500px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .modal-content h3 { margin-top: 0; color: var(--primary); }
+        .modal-close {
+            float: right;
+            background: none;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            color: #95a5a6;
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            top: 60px;
+            right: 20px;
+            padding: 12px 20px;
+            border-radius: 8px;
+            color: white;
+            font-size: 13px;
+            font-weight: bold;
+            z-index: 9999;
+            animation: slideIn 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .toast-success { background: var(--success); }
+        .toast-error { background: var(--danger); }
+        .toast-info { background: var(--accent); }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .app-layout { flex-direction: column; }
+            .main-content { max-height: none; padding: 15px; }
+            .mobile-nav {
+                display: flex !important;
+                overflow-x: auto;
+                background: var(--white);
+                border-bottom: 1px solid var(--border);
+                padding: 0;
+            }
+            .mobile-nav .nav-item {
+                padding: 10px 15px;
+                white-space: nowrap;
+                font-size: 12px;
+                border-bottom: 2px solid transparent;
+                cursor: pointer;
+            }
+            .mobile-nav .nav-item.active {
+                border-bottom-color: var(--accent);
+                color: var(--accent);
+                font-weight: bold;
+            }
+            .mobile-nav .nav-item.hidden { display: none; }
+            .order-card .order-body { grid-template-columns: 1fr; }
+            .form-row { grid-template-columns: 1fr; }
+            .filter-bar { flex-direction: column; }
+            .filter-bar input, .filter-bar select { width: 100%; }
+        }
+        @media (min-width: 769px) {
+            .mobile-nav { display: none !important; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Login Section -->
+<div id="login-section" class="login-container">
+    <div class="login-box">
+        <h2>📦 訂單管理系統</h2>
+        <p style="color:#7f8c8d; margin-bottom:25px; font-size:13px;">請輸入您的帳號資料登入</p>
+        <input type="email" id="loginEmail" placeholder="電子郵件 (Email)" onkeypress="if(event.key==='Enter')document.getElementById('loginPassword').focus()">
+        <input type="password" id="loginPassword" placeholder="密碼" onkeypress="if(event.key==='Enter')doLogin()">
+        <button class="btn-login" id="loginBtn" onclick="doLogin()">登入系統</button>
+        <p class="login-error" id="loginError">登入失敗，請檢查帳號或密碼</p>
+    </div>
+</div>
+
+<!-- Main App -->
+<div id="app-section" style="display:none;">
+    <div class="nav-bar">
+        <div>
+            <div class="brand">📦 訂單管理系統</div>
+            <div class="user-info" id="userInfoDisplay"></div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+            <button onclick="refreshAllData()">🔄 更新</button>
+            <button onclick="doLogout()">登出</button>
+        </div>
+    </div>
+
+    <!-- Mobile Navigation -->
+    <div class="mobile-nav" id="mobileNav"></div>
+
+    <div class="app-layout">
+        <div class="sidebar" id="sidebarNav"></div>
+        <div class="main-content" id="mainContent"></div>
+    </div>
+</div>
+
+<!-- Loading Overlay -->
+<div class="loading-overlay" id="loadingOverlay" style="display:none;">
+    <div class="spinner"></div>
+</div>
+
+<script>
+// ============================================================
+// CONFIGURATION
+// ============================================================
+const CONFIG = {
+    GAS_URL: 'https://script.google.com/macros/s/AKfycbyoBfQV2jQoHYH6_4iypWITDHVTr1IKHKT-_2xLHEL8dv2gYWiITWXSAHcdnKmd5dSPpA/exec'
+};
+
+// ============================================================
+// STATE
+// ============================================================
+let currentUser = null;
+let configData = { suppliers: [], items: [], supplierItems: {} };
+let recordsData = [];
+let currentPage = 'outbound';
+
+// ============================================================
+// UTILITY
+// ============================================================
+function showLoading() { document.getElementById('loadingOverlay').style.display = 'flex'; }
+function hideLoading() { document.getElementById('loadingOverlay').style.display = 'none'; }
+
+function showToast(msg, type = 'success') {
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.textContent = msg;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+}
+
+function getNowStr() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+}
+
+function parseDate(str) {
+    if (!str) return null;
+    str = str.toString().trim();
+    // Try Chinese format: YYYY年M月D日
+    const cnMatch = str.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+    if (cnMatch) return new Date(parseInt(cnMatch[1]), parseInt(cnMatch[2]) - 1, parseInt(cnMatch[3]));
+    // Try ISO date format (YYYY-MM-DD) at start of string
+    const isoMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (isoMatch) return new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]));
+    // Try full Date string like 'Sun May 31 2026 00:00:00 GMT+0800...'
+    const fullMatch = str.match(/^[A-Za-z]{3}\s+([A-Za-z]{3})\s+(\d{1,2})\s+(\d{4})/);
+    if (fullMatch) {
+        const months = {Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
+        return new Date(parseInt(fullMatch[3]), months[fullMatch[1]] || 0, parseInt(fullMatch[2]));
+    }
+    // Fallback: try native Date parsing
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) return d;
+    return null;
+}
+
+function pad2(n) { return String(n).padStart(2, '0'); }
+
+function dateOnly(str) {
+    if (!str) return '-';
+    const d = parseDate(str);
+    if (!d) return str;
+    return `${d.getFullYear()}年${pad2(d.getMonth()+1)}月${pad2(d.getDate())}日`;
+}
+
+function dateWithWeekday(str) {
+    if (!str) return '-';
+    const d = parseDate(str);
+    if (!d) return str;
+    const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+    return `${d.getFullYear()}年${pad2(d.getMonth()+1)}月${pad2(d.getDate())}日 (星期${weekdays[d.getDay()]})`;
+}
+
+function monthOnly(str) {
+    if (!str) return '';
+    // Handle YYYY-MM format
+    const m = str.match(/(\d{4})-(\d{2})/);
+    if (m) return `${m[1]}年${m[2]}月`;
+    // Handle Chinese format
+    const cn = str.match(/(\d{4})年(\d{1,2})月/);
+    if (cn) return `${cn[1]}年${pad2(parseInt(cn[2]))}月`;
+    // Handle Date.toString() format like "Wed Jul 01 2026 00:00:00 GMT+0800..."
+    const fullMatch = str.match(/[A-Za-z]{3}\s+([A-Za-z]{3})\s+\d{1,2}\s+(\d{4})/);
+    if (fullMatch) {
+        const months = {Jan:'01',Feb:'02',Mar:'03',Apr:'04',May:'05',Jun:'06',Jul:'07',Aug:'08',Sep:'09',Oct:'10',Nov:'11',Dec:'12'};
+        return `${fullMatch[2]}年${months[fullMatch[1]] || '01'}月`;
+    }
+    return str;
+}
+
+function getCurrentMonth() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+
+// ============================================================
+// API CALLS (All through GAS)
+// ============================================================
+async function gasGet(params) {
+    const url = new URL(CONFIG.GAS_URL);
+    Object.keys(params).forEach(k => url.searchParams.append(k, params[k]));
+    const resp = await fetch(url.toString());
+    if (!resp.ok) throw new Error('Network error');
+    return await resp.json();
+}
+
+async function gasPost(data) {
+    // GAS POST with redirect handling
+    // Method 1: Try with redirect follow (works if CORS is properly set)
+    try {
+        const resp = await fetch(CONFIG.GAS_URL, {
+            method: 'POST',
+            body: JSON.stringify(data),
+            redirect: 'follow',
+            mode: 'no-cors'
+        });
+        // no-cors mode returns opaque response, assume success
+        return { success: true };
+    } catch (e) {
+        console.error('gasPost error:', e);
+        throw new Error('Network error: ' + e.message);
+    }
+}
+
+// ============================================================
+// LOGIN
+// ============================================================
+async function doLogin() {
+    const email = document.getElementById('loginEmail').value.trim();
+    const password = document.getElementById('loginPassword').value.trim();
+    if (!email || !password) return;
+
+    const btn = document.getElementById('loginBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading-spin"></span>';
+    document.getElementById('loginError').style.display = 'none';
+
+    try {
+        const result = await gasGet({ action: 'login', email: email, password: password });
+        if (result.success && result.user) {
+            currentUser = result.user;
+            await loadInitialData();
+            showApp();
+        } else {
+            document.getElementById('loginError').style.display = 'block';
+        }
+    } catch (e) {
+        console.error('Login error:', e);
+        document.getElementById('loginError').textContent = '連線失敗，請檢查網路設定';
+        document.getElementById('loginError').style.display = 'block';
+    }
+
+    btn.disabled = false;
+    btn.textContent = '登入系統';
+}
+
+function doLogout() {
+    currentUser = null;
+    document.getElementById('app-section').style.display = 'none';
+    document.getElementById('login-section').style.display = 'flex';
+    document.getElementById('loginPassword').value = '';
+}
+
+function isAdmin() {
+    return currentUser && currentUser.role === 'Admin';
+}
+
+// ============================================================
+// DATA LOADING
+// ============================================================
+async function loadInitialData() {
+    showLoading();
+    try {
+        const configResult = await gasGet({ action: 'getConfig' });
+        if (configResult.success) {
+            configData.suppliers = configResult.suppliers || [];
+            configData.items = configResult.items || [];
+            configData.supplierItems = configResult.supplierItems || {};
+        }
+        await loadRecords();
+    } catch (e) {
+        console.error('Load data error:', e);
+        showToast('載入資料失敗', 'error');
+    }
+    hideLoading();
+}
+
+async function loadRecords() {
+    const result = await gasGet({ action: 'getRecords' });
+    if (result.success) {
+        recordsData = result.records || [];
+    }
+}
+
+async function refreshAllData() {
+    showLoading();
+    try {
+        await loadRecords();
+        renderCurrentPage();
+        showToast('資料已更新');
+    } catch (e) {
+        showToast('更新失敗', 'error');
+    }
+    hideLoading();
+}
+
+// ============================================================
+// APP INIT
+// ============================================================
+function showApp() {
+    document.getElementById('login-section').style.display = 'none';
+    document.getElementById('app-section').style.display = 'block';
+    document.getElementById('userInfoDisplay').textContent = `${currentUser.name} (${currentUser.role})`;
+    buildNavigation();
+    navigateTo('outbound');
+}
+
+function buildNavigation() {
+    const pages = [
+        { id: 'inbound', label: '📥 訂單登記', adminOnly: true },
+        { id: 'outbound', label: '🎁 回禮出貨管理', adminOnly: false },
+        { id: 'monthly', label: '📅 訂單總匯(月份)', adminOnly: false },
+        { id: 'status', label: '📊 訂單近況', adminOnly: true },
+        { id: 'edit', label: '✏️ 更改訂單', adminOnly: true },
+        { id: 'ledger', label: '📒 流水帳管理', adminOnly: true }
+    ];
+
+    const sidebar = document.getElementById('sidebarNav');
+    const mobileNav = document.getElementById('mobileNav');
+    sidebar.innerHTML = '';
+    mobileNav.innerHTML = '';
+
+    pages.forEach(p => {
+        const hidden = p.adminOnly && !isAdmin();
+
+        const div = document.createElement('div');
+        div.className = `nav-item ${hidden ? 'hidden' : ''} ${p.id === currentPage ? 'active' : ''}`;
+        div.textContent = p.label;
+        div.onclick = () => navigateTo(p.id);
+        div.dataset.page = p.id;
+        sidebar.appendChild(div);
+
+        const mdiv = document.createElement('div');
+        mdiv.className = `nav-item ${hidden ? 'hidden' : ''} ${p.id === currentPage ? 'active' : ''}`;
+        mdiv.textContent = p.label;
+        mdiv.onclick = () => navigateTo(p.id);
+        mdiv.dataset.page = p.id;
+        mobileNav.appendChild(mdiv);
+    });
+}
+
+function navigateTo(pageId) {
+    currentPage = pageId;
+    document.querySelectorAll('.nav-item').forEach(el => {
+        el.classList.toggle('active', el.dataset.page === pageId);
+    });
+    renderCurrentPage();
+}
+
+function renderCurrentPage() {
+    const content = document.getElementById('mainContent');
+    switch (currentPage) {
+        case 'inbound': renderInboundPage(content); break;
+        case 'outbound': renderOutboundPage(content); break;
+        case 'monthly': renderMonthlyPage(content); break;
+        case 'status': renderStatusPage(content); break;
+        case 'edit': renderEditPage(content); break;
+        case 'ledger': renderLedgerPage(content); break;
+    }
+}
+
+// ============================================================
+// PAGE: 入庫登記 (Admin)
+// ============================================================
+let inboundItemCount = 1;
+
+function renderInboundPage(container) {
+    inboundItemCount = 1;
+    container.innerHTML = `
+        <div class="page-title">📥 訂單登記</div>
+        
+        <!-- PDF 自動識別區域 -->
+        <div class="card" style="margin-bottom:15px; border:2px dashed var(--accent); background:#f0f8ff;">
+            <div style="display:flex; align-items:center; gap:12px; margin-bottom:10px;">
+                <span style="font-size:20px;">📄</span>
+                <div>
+                    <div style="font-weight:bold; color:var(--primary);">PDF 訂單自動識別</div>
+                    <div style="font-size:12px; color:#7f8c8d;">上傳訂單 PDF，系統會自動識別並填入資料，請核實後確認入庫</div>
+                </div>
+            </div>
+            <div style="display:flex; gap:10px; align-items:center;">
+                <input type="file" id="pdf-upload" accept=".pdf" onchange="handlePdfUpload(event)" style="flex:1; font-size:13px;">
+                <span id="pdf-status" style="font-size:12px; color:#7f8c8d;"></span>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>供應商 *</label>
+                    <select id="inbound-supplier" onchange="onSupplierChange()">
+                        <option value="">-- 選擇供應商 --</option>
+                        ${configData.suppliers.map(s => `<option value="${s}">${s}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>訂單編號 *</label>
+                    <input type="text" id="inbound-order-number" placeholder="輸入訂單編號">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>客人姓名 *</label>
+                    <input type="text" id="inbound-customer" placeholder="輸入客人姓名">
+                </div>
+                <div class="form-group">
+                    <label>聯絡電話</label>
+                    <input type="text" id="inbound-phone" placeholder="輸入聯絡電話">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>送貨日期 *</label>
+                    <input type="date" id="inbound-date">
+                </div>
+                <div class="form-group">
+                    <label>送貨地址 *</label>
+                    <input type="text" id="inbound-address" placeholder="輸入送貨地址">
+                </div>
+            </div>
+
+            <!-- 產品項目區域（支援多項目） -->
+            <div style="border:1px solid var(--border); border-radius:8px; padding:15px; margin-bottom:15px; background:#fafbfc;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                    <label style="font-size:13px; font-weight:bold; color:var(--primary); margin:0;">產品項目 *</label>
+                    <button type="button" class="btn btn-success btn-sm" onclick="addInboundItem()">＋ 加項目</button>
+                </div>
+                <div id="inbound-items-container">
+                    <div class="inbound-item-row" id="inbound-item-row-1" style="border-bottom:1px dashed var(--border); padding-bottom:12px; margin-bottom:12px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                            <span style="font-size:12px; font-weight:bold; color:var(--accent);">項目 1</span>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group" style="margin-bottom:8px;">
+                                <label>項目名稱</label>
+                                <select class="inbound-item-select">
+                                    <option value="">-- 請先選擇供應商 --</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin-bottom:8px;">
+                                <label>數量</label>
+                                <input type="text" class="inbound-item-qty" placeholder="例：1">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>備註 (Remark)</label>
+                    <input type="text" id="inbound-remark" placeholder="選填">
+                </div>
+                <div class="form-group">
+                    <label>購買渠道</label>
+                    <select id="inbound-channel">
+                        <option value="">-- 選擇渠道 --</option>
+                        <option value="門市">門市</option>
+                        <option value="online">online</option>
+                        <option value="企業">企業</option>
+                        <option value="快閃">快閃</option>
+                        <option value="禮卡展">禮卡展</option>
+                        <option value="婚展">婚展</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Report 月份</label>
+                    <input type="month" id="inbound-report-month" value="${getCurrentMonth()}">
+                </div>
+            </div>
+            <div style="margin-top:20px; text-align:right;">
+                <button class="btn btn-primary" onclick="submitInbound()">提交入庫</button>
+            </div>
+        </div>
+    `;
+}
+
+function getItemOptionsForSupplier(supplier) {
+    if (!supplier) return '<option value="">-- 請先選擇供應商 --</option>';
+    const items = configData.supplierItems[supplier] || configData.items;
+    return '<option value="">-- 選擇項目 --</option>' + items.map(i => `<option value="${i}">${i}</option>`).join('');
+}
+
+function onSupplierChange() {
+    const supplier = document.getElementById('inbound-supplier').value;
+    // Update all existing item selects
+    const selects = document.querySelectorAll('.inbound-item-select');
+    selects.forEach(sel => {
+        sel.innerHTML = getItemOptionsForSupplier(supplier);
+    });
+}
+
+function addInboundItem() {
+    inboundItemCount++;
+    const supplier = document.getElementById('inbound-supplier').value;
+    const container = document.getElementById('inbound-items-container');
+    const div = document.createElement('div');
+    div.className = 'inbound-item-row';
+    div.id = `inbound-item-row-${inboundItemCount}`;
+    div.style.cssText = 'border-bottom:1px dashed var(--border); padding-bottom:12px; margin-bottom:12px;';
+    div.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <span style="font-size:12px; font-weight:bold; color:var(--accent);">項目 ${inboundItemCount}</span>
+            <button type="button" class="btn btn-danger btn-sm" onclick="removeInboundItem(${inboundItemCount})" style="padding:3px 8px; font-size:11px;">✕ 移除</button>
+        </div>
+        <div class="form-row">
+            <div class="form-group" style="margin-bottom:8px;">
+                <label>項目名稱</label>
+                <select class="inbound-item-select">
+                    ${getItemOptionsForSupplier(supplier)}
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom:8px;">
+                <label>數量</label>
+                <input type="text" class="inbound-item-qty" placeholder="例：1">
+            </div>
+        </div>
+    `;
+    container.appendChild(div);
+    // Focus on the new item's select
+    div.querySelector('.inbound-item-select').focus();
+}
+
+function removeInboundItem(id) {
+    const row = document.getElementById(`inbound-item-row-${id}`);
+    if (row) row.remove();
+}
+
+async function submitInbound() {
+    const supplier = document.getElementById('inbound-supplier').value;
+    const customer = document.getElementById('inbound-customer').value.trim();
+    const phone = document.getElementById('inbound-phone').value.trim();
+    const orderNumber = document.getElementById('inbound-order-number').value.trim();
+    const date = document.getElementById('inbound-date').value;
+    const address = document.getElementById('inbound-address').value.trim();
+    const remark = document.getElementById('inbound-remark').value.trim();
+    const channel = document.getElementById('inbound-channel').value.trim();
+    const reportMonth = document.getElementById('inbound-report-month').value;
+
+    // Collect all items
+    const itemSelects = document.querySelectorAll('.inbound-item-select');
+    const itemQtys = document.querySelectorAll('.inbound-item-qty');
+    const items = [];
+    let productQtyText = '';
+    let firstItem = '';
+
+    for (let i = 0; i < itemSelects.length; i++) {
+        const itemName = itemSelects[i].value;
+        const qty = itemQtys[i].value.trim();
+        if (itemName && qty) {
+            items.push({ name: itemName, qty: qty });
+            if (!firstItem) firstItem = itemName;
+        }
+    }
+
+    if (!supplier || items.length === 0 || !customer || !orderNumber || !date || !address) {
+        showToast('請填寫所有必填欄位，並至少添加一個項目', 'error');
+        return;
+    }
+
+    // Build product+qty text (combine all items)
+    productQtyText = items.map(it => `${it.name} x ${it.qty}`).join('\n');
+    // Use first item name as the "項目" column value; if multiple, join with comma
+    const itemColumn = items.map(it => it.name).join(', ');
+
+    showLoading();
+    try {
+        const now = getNowStr();
+        // 欄位順序：A時間, B供應商, C項目, D產品及數量, E客人姓名, F聯絡電話, G訂單編號, H送貨日期, I送貨地址, Jremark, K送貨進度, L紀錄日期與時間, M購買渠道, Nreport月份
+        const values = [now, supplier, itemColumn, productQtyText, customer, phone, orderNumber, date, address, remark, '待出貨', '', channel, reportMonth];
+
+        // Write to Records sheet
+        await gasPost({ action: 'append', sheet: 'Records', values: [values] });
+
+        // Also write to each item-specific sheet (independent tab)
+        for (const it of items) {
+            const itemValues = [now, supplier, it.name, `${it.name} x ${it.qty}`, customer, phone, orderNumber, date, address, remark, '待出貨', '', channel, reportMonth];
+            await gasPost({ action: 'append', sheet: it.name, values: [itemValues] });
+        }
+
+        showToast('入庫登記成功！');
+
+        // Clear form
+        document.getElementById('inbound-customer').value = '';
+        document.getElementById('inbound-phone').value = '';
+        document.getElementById('inbound-order-number').value = '';
+        document.getElementById('inbound-address').value = '';
+        document.getElementById('inbound-remark').value = '';
+        document.getElementById('inbound-channel').selectedIndex = 0;
+        // Reset PDF upload
+        const pdfInput = document.getElementById('pdf-upload');
+        if (pdfInput) pdfInput.value = '';
+        const pdfStatus = document.getElementById('pdf-status');
+        if (pdfStatus) pdfStatus.textContent = '';
+        // Reset items to single row
+        inboundItemCount = 1;
+        document.getElementById('inbound-items-container').innerHTML = `
+            <div class="inbound-item-row" id="inbound-item-row-1" style="border-bottom:1px dashed var(--border); padding-bottom:12px; margin-bottom:12px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <span style="font-size:12px; font-weight:bold; color:var(--accent);">項目 1</span>
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="margin-bottom:8px;">
+                        <label>項目名稱</label>
+                        <select class="inbound-item-select">
+                            <option value="">-- 選擇項目 --</option>
+                            ${configData.items.map(i => '<option value="' + i + '">' + i + '</option>').join('')}
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin-bottom:8px;">
+                        <label>數量</label>
+                        <input type="text" class="inbound-item-qty" placeholder="例：1">
+                    </div>
+                </div>
+            </div>
+        `;
+
+        await loadRecords();
+    } catch (e) {
+        console.error(e);
+        showToast('提交失敗，請重試', 'error');
+    }
+    hideLoading();
+}
+
+// ============================================================
+// PDF 自動識別
+// ============================================================
+async function handlePdfUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const statusEl = document.getElementById('pdf-status');
+    statusEl.textContent = '識別中...';
+    statusEl.style.color = 'var(--accent)';
+
+    try {
+        const arrayBuffer = await file.arrayBuffer();
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        let fullText = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const textContent = await page.getTextContent();
+            // Group items by Y position to reconstruct lines
+            const items = textContent.items;
+            const lines = {};
+            items.forEach(item => {
+                const y = Math.round(item.transform[5]); // Y position
+                if (!lines[y]) lines[y] = [];
+                lines[y].push({ x: item.transform[4], str: item.str });
+            });
+            // Sort lines by Y (descending = top to bottom)
+            const sortedYs = Object.keys(lines).sort((a, b) => b - a);
+            sortedYs.forEach(y => {
+                // Sort items in each line by X position
+                lines[y].sort((a, b) => a.x - b.x);
+                fullText += lines[y].map(item => item.str).join(' ') + '\n';
+            });
+        }
+        console.log('PDF extracted text:', fullText);
+        parsePdfText(fullText);
+        statusEl.textContent = '✓ 識別完成，請核實資料';
+        statusEl.style.color = 'var(--success)';
+    } catch (e) {
+        console.error('PDF parse error:', e);
+        statusEl.textContent = '✗ 識別失敗，請手動填寫';
+        statusEl.style.color = 'var(--danger)';
+    }
+}
+
+function parsePdfText(text) {
+    console.log('Parsing PDF text...');
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+    
+    // Extract Order # - look for pattern like SA-26-067, AB-24-001, GD18022513 etc.
+    let orderNumber = '';
+    const orderPatterns = [
+        /\b(SA-\d+-\d+)\b/,
+        /\b(AB-\d+-\d+)\b/,
+        /\b(GD\d+)\b/,
+        /\b(GD-?\d+-?\d*)\b/,
+        /\b(WL-\d+-\d+)\b/,
+        /\b(KW-\d+-\d+)\b/,
+        /\b(LMG-\d+-\d+)\b/,
+        /\b(LMDC[_\-]\S+)\b/,
+        /\b(GBBM-\d+-\d+)\b/,
+        /\b(TG\d+)\b/
+    ];
+    for (const pat of orderPatterns) {
+        const m = text.match(pat);
+        if (m) { orderNumber = m[1]; break; }
+    }
+    console.log('Order #:', orderNumber);
+
+    // Extract customer name - find line with "姓名" label
+    // In this PDF, name appears on the line BEFORE "姓名 ：" OR on same line
+    let customerName = '';
+    for (let i = 0; i < lines.length; i++) {
+        if (/姓名\s*[：:]/.test(lines[i])) {
+            // Check if name is on same line after the label
+            const sameLine = lines[i].match(/姓名\s*[：:]\s*(.+)/);
+            if (sameLine && sameLine[1].trim() && !/\d{8}/.test(sameLine[1])) {
+                customerName = sameLine[1].trim();
+            } else {
+                // Name might be on the PREVIOUS line (pdf.js Y-sort quirk)
+                if (i > 0 && lines[i-1] && !/[：:]|\d{8}|客人資料|預訂|產品/.test(lines[i-1])) {
+                    customerName = lines[i-1].trim();
+                }
+                // Or NEXT line
+                if (!customerName && i + 1 < lines.length && !/[：:]|\d{8}|聯絡/.test(lines[i+1])) {
+                    customerName = lines[i+1].trim();
+                }
+            }
+            break;
+        }
+    }
+    // Also try 收件人 field
+    if (!customerName) {
+        const recipientMatch = text.match(/收件人\s*[：:]\s*(.+)/m);
+        if (recipientMatch) customerName = recipientMatch[1].trim();
+    }
+    console.log('Customer:', customerName);
+
+    // Extract delivery address
+    let address = '';
+    const addrMatch = text.match(/送貨地址\s*[：:]\s*(.+)/m);
+    if (addrMatch) {
+        address = addrMatch[1].trim();
+        if (/^\d{6,}$/.test(address)) address = '';
+    }
+    if (!address) {
+        // Look for HK address pattern in lines
+        for (const line of lines) {
+            if (line.length > 8 && /[一-鿿]/.test(line) && (/室|樓|號|街|道|座/.test(line) || /\d+[號樓座]/.test(line))) {
+                if (!/BESPOKE|PRODUCTION|LTD|Tel:|Email:|Website:|送貨地址|產品|數量/.test(line)) {
+                    address = line;
+                    break;
+                }
+            }
+        }
+    }
+    console.log('Address:', address);
+
+    // Extract delivery date - handle "2026 年 7 月 30 日" with spaces
+    let deliveryDate = '';
+    const dateMatch = text.match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
+    if (dateMatch) {
+        deliveryDate = `${dateMatch[1]}-${String(dateMatch[2]).padStart(2,'0')}-${String(dateMatch[3]).padStart(2,'0')}`;
+    }
+    if (!deliveryDate) {
+        const engDate = text.match(/(?:Order\s*Date|Date)\s*[：:]\s*([A-Za-z]+\s+\d{1,2},?\s+\d{4})/);
+        if (engDate) {
+            const d = new Date(engDate[1]);
+            if (!isNaN(d.getTime())) deliveryDate = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        }
+    }
+    console.log('Delivery Date:', deliveryDate);
+
+    // Extract supplier from order number prefix or product names
+    let supplier = '';
+    if (orderNumber) {
+        // Try to match supplier from order number prefix
+        const prefix = orderNumber.split('-')[0];
+        const supplierMap = {
+            'SA': 'Saicho',
+            'AB': 'agn\u00e8s b.',
+            'GD': 'Godiva',
+            'WL': '永樂粉麵廠',
+            'KW': '奇華餅家',
+            'LMG': 'Lady M',
+            'LMDC': 'La Maison Du Chocolat',
+            'GBBM': 'Gets Bro - Bonne Maman',
+            'TG': '糕點時光'
+        };
+        supplier = supplierMap[prefix] || '';
+    }
+    if (!supplier) {
+        // Try to find supplier from product names
+        for (const s of configData.suppliers) {
+            if (text.includes(s)) { supplier = s; break; }
+        }
+    }
+
+    // Extract products - handle both same-line and next-line formats
+    // Actual format from pdf.js:
+    //   "產品名字：" (next line) "Saicho xxx"  OR  "產品名字：  Saicho xxx"
+    //   "數量：" (next line) "1箱"  OR  "數量：  1箱"
+    const productNames = [];
+    const quantities = [];
+    for (let i = 0; i < lines.length; i++) {
+        if (/產品名字\s*[：:]/.test(lines[i])) {
+            // Check same line
+            const sameLine = lines[i].match(/產品名字\s*[：:]\s*(.+)/);
+            if (sameLine && sameLine[1].trim()) {
+                productNames.push(sameLine[1].trim());
+            } else if (i + 1 < lines.length) {
+                // Next line is the product name
+                productNames.push(lines[i + 1].trim());
+            }
+        }
+        if (/數量\s*[：:]/.test(lines[i])) {
+            const sameLine = lines[i].match(/數量\s*[：:]\s*(.+)/);
+            if (sameLine && sameLine[1].trim()) {
+                quantities.push(sameLine[1].trim());
+            } else if (i + 1 < lines.length) {
+                quantities.push(lines[i + 1].trim());
+            }
+        }
+    }
+    console.log('Products:', productNames, 'Quantities:', quantities);
+
+    // Build product detail text with tea flavors
+    let productDetails = [];
+    for (let i = 0; i < productNames.length; i++) {
+        let detail = productNames[i];
+        if (quantities[i]) detail += ' x ' + quantities[i];
+        // Try to extract tea flavors after each product
+        const afterProduct = text.substring(text.indexOf(productNames[i]) + productNames[i].length);
+        const flavors = [];
+        const flavorRegex = /(茉莉花|桂花|大吉嶺|焙茶)\s*(\d+)\s*支/g;
+        let fMatch;
+        let searchText = afterProduct.substring(0, 200); // limit search
+        while ((fMatch = flavorRegex.exec(searchText)) !== null) {
+            if (parseInt(fMatch[2]) > 0) flavors.push(`${fMatch[1]}${fMatch[2]}支`);
+        }
+        if (flavors.length > 0) detail += '\n' + flavors.join(' ');
+        productDetails.push(detail);
+    }
+
+    // Extract phone number
+    let phone = '';
+    const phoneMatch = text.match(/聯絡電話\s*[：:]\s*(\d{8,})/m);
+    if (phoneMatch) phone = phoneMatch[1].trim();
+    if (!phone) {
+        // Look for 8-digit HK phone number near customer info
+        const phoneAlt = text.match(/\b(\d{8})\b/);
+        if (phoneAlt) phone = phoneAlt[1];
+    }
+    console.log('Phone:', phone);
+
+    // Extract remark
+    const remarkMatch = text.match(/訂單送貨備註[\s：:]+(.+?)(?=\s*BESPOKE|$)/);
+    let remark = remarkMatch ? remarkMatch[1].trim() : '';
+    if (remark === '灣仔' || remark.length > 100) remark = ''; // cleanup false matches
+
+    // Fill form fields
+    if (supplier) {
+        const supplierSelect = document.getElementById('inbound-supplier');
+        for (let i = 0; i < supplierSelect.options.length; i++) {
+            if (supplierSelect.options[i].value === supplier) {
+                supplierSelect.selectedIndex = i;
+                onSupplierChange();
+                break;
+            }
+        }
+    }
+    if (orderNumber) document.getElementById('inbound-order-number').value = orderNumber;
+    if (customerName) document.getElementById('inbound-customer').value = customerName;
+    if (phone) document.getElementById('inbound-phone').value = phone;
+    if (deliveryDate) document.getElementById('inbound-date').value = deliveryDate;
+    if (address) document.getElementById('inbound-address').value = address;
+    if (remark) document.getElementById('inbound-remark').value = remark;
+
+    // Fill product items
+    if (productDetails.length > 0) {
+        // Set the product qty text in the first item
+        const fullProductText = productDetails.join('\n');
+        // Reset items container with a single text display
+        inboundItemCount = 1;
+        const itemsContainer = document.getElementById('inbound-items-container');
+        const itemSelects = itemsContainer.querySelectorAll('.inbound-item-select');
+        const itemQtys = itemsContainer.querySelectorAll('.inbound-item-qty');
+
+        // Try to match first product to a config item
+        if (itemSelects.length > 0 && supplier) {
+            const supplierItemsList = configData.supplierItems[supplier] || configData.items;
+            // For each product, add an item row
+            for (let i = 0; i < productDetails.length; i++) {
+                if (i > 0) addInboundItem();
+            }
+            // Now fill them
+            const allSelects = document.querySelectorAll('.inbound-item-select');
+            const allQtys = document.querySelectorAll('.inbound-item-qty');
+            for (let i = 0; i < productDetails.length; i++) {
+                const pName = productNames[i] || '';
+                const qty = quantities[i] || '1';
+                // Try to match product name to supplier items
+                if (allSelects[i]) {
+                    let matched = false;
+                    for (let j = 0; j < allSelects[i].options.length; j++) {
+                        if (pName.includes(allSelects[i].options[j].value) || allSelects[i].options[j].value.includes(pName.split('x')[0].trim())) {
+                            allSelects[i].selectedIndex = j;
+                            matched = true;
+                            break;
+                        }
+                    }
+                }
+                if (allQtys[i]) allQtys[i].value = qty;
+            }
+        }
+    }
+}
+
+// ============================================================
+// PAGE: 出庫管理
+// ============================================================
+function renderOutboundPage(container) {
+    const records = getVisibleRecords();
+    const undelivered = records.filter(r => r.deliveryStatus !== '已送達');
+    const delivered = records.filter(r => r.deliveryStatus === '已送達');
+
+    container.innerHTML = `
+        <div class="page-title">🎁 回禮出貨管理</div>
+        <div class="filter-bar">
+            <select id="outbound-tab" onchange="renderOutboundList()">
+                <option value="pending">待出貨 (${undelivered.length})</option>
+                <option value="delivered">已送達 (${delivered.length})</option>
+                <option value="all">全部 (${records.length})</option>
+            </select>
+            <input type="text" id="outbound-search" placeholder="搜尋客人姓名 / 訂單編號 / 供應商..." oninput="renderOutboundList()">
+        </div>
+        <div id="outbound-list"></div>
+    `;
+    renderOutboundList();
+}
+
+function renderOutboundList() {
+    const tab = document.getElementById('outbound-tab').value;
+    const search = (document.getElementById('outbound-search').value || '').toLowerCase();
+    let records = getVisibleRecords();
+
+    if (tab === 'pending') {
+        records = records.filter(r => r.deliveryStatus !== '已送達');
+        records.sort((a, b) => new Date(a.deliveryDate || '9999-12-31') - new Date(b.deliveryDate || '9999-12-31'));
+    } else if (tab === 'delivered') {
+        records = records.filter(r => r.deliveryStatus === '已送達');
+        records.sort((a, b) => new Date(b.deliveryDate || '0000-01-01') - new Date(a.deliveryDate || '0000-01-01'));
+    } else {
+        records.sort((a, b) => new Date(a.deliveryDate || '9999-12-31') - new Date(b.deliveryDate || '9999-12-31'));
+    }
+
+    if (search) {
+        records = records.filter(r =>
+            r.customerName.toLowerCase().includes(search) ||
+            r.supplier.toLowerCase().includes(search) ||
+            r.item.toLowerCase().includes(search) ||
+            r.orderNumber.toLowerCase().includes(search)
+        );
+    }
+
+    const listEl = document.getElementById('outbound-list');
+    if (records.length === 0) {
+        listEl.innerHTML = '<div class="card" style="text-align:center; color:#95a5a6;">沒有符合條件的訂單</div>';
+        return;
+    }
+
+    listEl.innerHTML = records.map(r => {
+        const isDelivered = r.deliveryStatus === '已送達';
+        const today = new Date(); today.setHours(0,0,0,0);
+        const delivDate = new Date(r.deliveryDate);
+        const diffDays = (delivDate - today) / (1000*60*60*24);
+        const isUrgent = !isDelivered && r.deliveryDate && diffDays <= 2;
+
+        return `
+        <div class="order-card ${isDelivered ? 'delivered' : ''}" style="${isUrgent ? 'border-left-color: var(--danger);' : ''}">
+            <div class="order-header">
+                <div>
+                    <span class="order-id">${r.orderNumber ? '#' + r.orderNumber : ''} ${r.supplier} - ${r.customerName}</span>
+                </div>
+                <span class="badge ${isDelivered ? 'badge-delivered' : 'badge-pending'}">${isDelivered ? '已送達' : '待出貨'}</span>
+            </div>
+            <div class="order-body">
+                <div>
+                    <div class="field-label">項目</div>
+                    <div class="field-value" style="font-weight:bold;">${r.item}</div>
+                    <div class="field-label">產品及數量</div>
+                    <div class="field-value">${r.productQty}</div>
+                    <div class="field-label">備註</div>
+                    <div class="field-value">${r.remark || '-'}</div>
+                </div>
+                <div>
+                    <div class="field-label">客人姓名</div>
+                    <div class="field-value" style="font-weight:bold;">${r.customerName}</div>
+                    <div class="field-label">送貨日期</div>
+                    <div class="field-value" style="font-weight:bold; ${isUrgent ? 'color:var(--danger);' : ''}">${dateWithWeekday(r.deliveryDate)}</div>
+                    <div class="field-label">送貨地址</div>
+                    <div class="field-value">${r.deliveryAddress || '-'}</div>
+                    <div class="field-label">登記日期</div>
+                    <div class="field-value">${dateOnly(r.timestamp)}</div>
+                </div>
+            </div>
+            <div class="order-actions">
+                ${isDelivered
+                    ? `<span style="color:var(--success); font-size:12px; font-weight:bold;">✓ 已送達 (${dateOnly(r.recordDateTime)})</span>`
+                    : `<button class="btn btn-success btn-sm" onclick="markDelivered(${r.rowIndex})">✓ 標記已送達</button>`
+                }
+                <button class="btn btn-sm" style="background:#8e44ad; color:white;" onclick="openOutboundRemarkModal(${r.rowIndex})">📝 Remark</button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+async function markDelivered(rowIndex) {
+    if (!confirm('確認標記此訂單為已送達？')) return;
+    showLoading();
+    try {
+        const now = getNowStr();
+        // K欄(col 11): 送貨進度, L欄(col 12): 紀錄日期與時間
+        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 11, value: '已送達' });
+        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 12, value: now });
+        await loadRecords();
+        renderCurrentPage();
+        showToast('已標記為送達！');
+    } catch (e) {
+        showToast('更新失敗', 'error');
+    }
+    hideLoading();
+}
+
+async function toggleDeliveryStatus(rowIndex, newStatus) {
+    showLoading();
+    try {
+        const now = getNowStr();
+        // K欄(col 11): 送貨進度
+        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 11, value: newStatus });
+        // L欄(col 12): 紀錄日期與時間
+        if (newStatus === '已送達') {
+            await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 12, value: now });
+        } else {
+            await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 12, value: '' });
+        }
+        await loadRecords();
+        renderCurrentPage();
+        showToast(newStatus === '已送達' ? '已標記為送達！' : '已改回待出貨');
+    } catch (e) {
+        showToast('更新失敗', 'error');
+    }
+    hideLoading();
+}
+
+function openOutboundRemarkModal(rowIndex) {
+    const record = recordsData.find(r => r.rowIndex === rowIndex);
+    if (!record) return;
+    const modalHtml = `
+        <button class="modal-close" onclick="closeModal()">✕</button>
+        <h3>📝 增加/修改 Remark</h3>
+        <p style="color:#95a5a6; font-size:12px;">客人：${record.customerName} | 訂單：#${record.orderNumber || '-'} | ${record.supplier}</p>
+        <div class="form-group">
+            <label>備註 (Remark)</label>
+            <textarea id="outbound-edit-remark">${record.remark || ''}</textarea>
+        </div>
+        <div style="text-align:right; margin-top:20px;">
+            <button class="btn btn-primary" onclick="saveOutboundRemark(${rowIndex})">儲存</button>
+        </div>
+    `;
+    showModal(modalHtml);
+}
+
+async function saveOutboundRemark(rowIndex) {
+    const remark = document.getElementById('outbound-edit-remark').value.trim();
+    showLoading();
+    try {
+        // J欄(col 10): remark
+        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 10, value: remark });
+        await loadRecords();
+        closeModal();
+        renderCurrentPage();
+        showToast('Remark 已更新！');
+    } catch (e) {
+        showToast('更新失敗', 'error');
+    }
+    hideLoading();
+}
+
+// ============================================================
+// PAGE: 月份訂單
+// ============================================================
+function renderMonthlyPage(container) {
+    const currentMonth = getCurrentMonth();
+
+    container.innerHTML = `
+        <div class="page-title">📅 訂單總匯(月份)</div>
+        <div class="filter-bar">
+            <label style="font-size:12px; align-self:center; font-weight:bold;">選擇月份：</label>
+            <input type="month" id="monthly-month" value="${currentMonth}" onchange="renderMonthlyContent()">
+        </div>
+        <div id="monthly-content"></div>
+    `;
+    renderMonthlyContent();
+}
+
+function renderMonthlyContent() {
+    const filterMonth = document.getElementById('monthly-month')?.value || getCurrentMonth();
+    let records = getVisibleRecords();
+
+    // Filter by selected month (based on delivery date)
+    records = records.filter(r => {
+        if (!r.deliveryDate) return false;
+        const d = parseDate(r.deliveryDate);
+        if (!d) return false;
+        const recordMonth = `${d.getFullYear()}-${pad2(d.getMonth()+1)}`;
+        return recordMonth === filterMonth;
+    });
+
+    // Sort by delivery date
+    records.sort((a, b) => {
+        const da = parseDate(a.deliveryDate) || new Date('9999-12-31');
+        const db = parseDate(b.deliveryDate) || new Date('9999-12-31');
+        return da - db;
+    });
+
+    const contentEl = document.getElementById('monthly-content');
+    if (records.length === 0) {
+        contentEl.innerHTML = '<div class="card" style="text-align:center; color:#95a5a6;">此月份沒有訂單</div>';
+        return;
+    }
+
+    contentEl.innerHTML = `
+        <div class="card" style="margin-bottom:10px; padding:12px; background:var(--light-bg);">
+            <strong>共 ${records.length} 筆訂單</strong>
+        </div>
+        <table class="data-table" style="table-layout:auto; width:100%;">
+            <thead>
+                <tr>
+                    <th>訂單編號</th>
+                    <th>送貨日期</th>
+                    <th>客人姓名</th>
+                    <th>項目</th>
+                    <th>產品及數量</th>
+                    <th>送貨地址</th>
+                    <th>備註</th>
+                    <th>送達狀態</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${records.map(r => `
+                <tr>
+                    <td style="font-weight:bold; white-space:nowrap;">${r.orderNumber ? '#' + r.orderNumber : '-'}</td>
+                    <td style="white-space:nowrap;">${dateWithWeekday(r.deliveryDate)}</td>
+                    <td>${r.customerName || '-'}</td>
+                    <td>${r.item || '-'}</td>
+                    <td style="font-size:12px; white-space:pre-wrap;">${r.productQty || '-'}</td>
+                    <td style="font-size:12px;">${r.deliveryAddress || '-'}</td>
+                    <td style="font-size:12px;">${r.remark || '-'}</td>
+                    <td><span class="badge ${r.deliveryStatus === '已送達' ? 'badge-delivered' : 'badge-pending'}">${r.deliveryStatus || '待出貨'}</span></td>
+                </tr>`).join('')}
+            </tbody>
+        </table>
+    `;
+}
+
+// ============================================================
+// PAGE: 訂單近況 (Admin)
+// ============================================================
+function renderStatusPage(container) {
+    const currentMonth = getCurrentMonth();
+
+    container.innerHTML = `
+        <div class="page-title">📊 訂單近況</div>
+        <div class="filter-bar">
+            <label style="font-size:12px; align-self:center; font-weight:bold;">顯示月份：</label>
+            <input type="month" id="status-month" value="${currentMonth}" onchange="renderStatusContent()">
+            <select id="status-supplier-filter" onchange="renderStatusContent()">
+                <option value="">全部供應商</option>
+                ${configData.suppliers.map(s => `<option value="${s}">${s}</option>`).join('')}
+            </select>
+        </div>
+        <div id="status-content"></div>
+    `;
+    renderStatusContent();
+}
+
+function renderStatusContent() {
+    let records = getVisibleRecords();
+    const filterMonth = document.getElementById('status-month')?.value || getCurrentMonth();
+    const supplierFilter = document.getElementById('status-supplier-filter')?.value || '';
+
+    // Filter by supplier if selected
+    if (supplierFilter) {
+        records = records.filter(r => r.supplier === supplierFilter);
+    }
+
+    // Group by supplier
+    const supplierGroups = {};
+    records.forEach(r => {
+        if (!supplierGroups[r.supplier]) supplierGroups[r.supplier] = [];
+        supplierGroups[r.supplier].push(r);
+    });
+
+    let html = '';
+    Object.keys(supplierGroups).sort().forEach(supplier => {
+        let orders = supplierGroups[supplier];
+        let monthOrders = orders.filter(r => r.deliveryDate && r.deliveryDate.startsWith(filterMonth));
+
+        if (monthOrders.length === 0) {
+            orders.sort((a, b) => new Date(b.deliveryDate || '0000-01-01') - new Date(a.deliveryDate || '0000-01-01'));
+            monthOrders = orders.slice(0, 10);
+        } else {
+            monthOrders.sort((a, b) => new Date(a.deliveryDate || '9999-12-31') - new Date(b.deliveryDate || '9999-12-31'));
+        }
+
+        html += `
+        <div class="supplier-group">
+            <div class="supplier-group-title">${supplier} <span style="font-size:12px; color:#95a5a6; font-weight:normal;">(${monthOrders.length} 筆)</span></div>
+            <div style="overflow-x:auto;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>訂單編號</th>
+                            <th>送貨日期</th>
+                            <th>送貨地址</th>
+                            <th>項目</th>
+                            <th>數量</th>
+                            <th>備註</th>
+                            <th>送達狀態</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${monthOrders.map(r => `
+                        <tr>
+                            <td style="font-weight:bold;">${r.orderNumber ? '#' + r.orderNumber : '-'}</td>
+                            <td style="white-space:nowrap;">${dateWithWeekday(r.deliveryDate)}</td>
+                            <td>${r.deliveryAddress || '-'}</td>
+                            <td>${r.item || '-'}</td>
+                            <td>${r.productQty || '-'}</td>
+                            <td>${r.remark || '-'}</td>
+                            <td>
+                                <button class="badge ${r.deliveryStatus === '已送達' ? 'badge-delivered' : 'badge-pending'}" 
+                                    style="cursor:pointer; border:none; padding:4px 10px; border-radius:12px; font-size:11px;"
+                                    onclick="toggleDeliveryStatus(${r.rowIndex}, '${r.deliveryStatus === '已送達' ? '待出貨' : '已送達'}')">
+                                    ${r.deliveryStatus || '待出貨'}
+                                </button>
+                            </td>
+                        </tr>`).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>`;
+    });
+
+    if (Object.keys(supplierGroups).length === 0) {
+        html = '<div class="card" style="text-align:center; color:#95a5a6;">暫無訂單資料</div>';
+    }
+
+    document.getElementById('status-content').innerHTML = html;
+}
+
+// ============================================================
+// PAGE: 更改訂單
+// ============================================================
+function renderEditPage(container) {
+    container.innerHTML = `
+        <div class="page-title">✏️ 更改訂單資料</div>
+        <div class="filter-bar">
+            <input type="text" id="edit-search" placeholder="搜尋客人姓名 / 訂單編號 / 供應商..." oninput="renderEditList()">
+            <select id="edit-supplier-filter" onchange="renderEditList()">
+                <option value="">全部供應商</option>
+                ${configData.suppliers.map(s => `<option value="${s}">${s}</option>`).join('')}
+            </select>
+        </div>
+        <div id="edit-list"></div>
+    `;
+    renderEditList();
+}
+
+function renderEditList() {
+    const search = (document.getElementById('edit-search').value || '').toLowerCase();
+    const supplierFilter = document.getElementById('edit-supplier-filter').value;
+    let records = getVisibleRecords();
+
+    if (search) {
+        records = records.filter(r =>
+            r.customerName.toLowerCase().includes(search) ||
+            r.supplier.toLowerCase().includes(search) ||
+            r.item.toLowerCase().includes(search) ||
+            r.orderNumber.toLowerCase().includes(search)
+        );
+    }
+    if (supplierFilter) {
+        records = records.filter(r => r.supplier === supplierFilter);
+    }
+
+    records.sort((a, b) => new Date(b.timestamp || '0000-01-01') - new Date(a.timestamp || '0000-01-01'));
+    records = records.slice(0, 50);
+
+    const listEl = document.getElementById('edit-list');
+    if (records.length === 0) {
+        listEl.innerHTML = '<div class="card" style="text-align:center; color:#95a5a6;">沒有找到訂單</div>';
+        return;
+    }
+
+    listEl.innerHTML = records.map(r => `
+        <div class="order-card">
+            <div class="order-header">
+                <div>
+                    <span class="order-id">${r.supplier} - ${r.item}</span>
+                    ${r.orderNumber ? `<span class="order-number">#${r.orderNumber}</span>` : ''}
+                </div>
+                <span class="order-date">${dateOnly(r.timestamp)}</span>
+            </div>
+            <div class="order-body">
+                <div>
+                    <div class="field-label">客人姓名</div>
+                    <div class="field-value" style="font-weight:bold;">${r.customerName}</div>
+                    <div class="field-label">產品及數量</div>
+                    <div class="field-value">${r.productQty}</div>
+                </div>
+                <div>
+                    <div class="field-label">送貨日期</div>
+                    <div class="field-value">${dateWithWeekday(r.deliveryDate)}</div>
+                    <div class="field-label">送貨地址</div>
+                    <div class="field-value">${r.deliveryAddress || '-'}</div>
+                </div>
+            </div>
+            <div class="order-actions">
+                <button class="btn btn-warning btn-sm" onclick="openEditModal(${r.rowIndex}, 'delivery')">📅 更改送貨資料</button>
+                <button class="btn btn-primary btn-sm" onclick="openEditModal(${r.rowIndex}, 'product')">📦 更改產品/數量</button>
+                <button class="btn btn-sm" style="background:#8e44ad; color:white;" onclick="openEditModal(${r.rowIndex}, 'remark')">📝 更改Remark</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function openEditModal(rowIndex, type) {
+    const record = recordsData.find(r => r.rowIndex === rowIndex);
+    if (!record) return;
+
+    let modalHtml = '';
+    if (type === 'delivery') {
+        modalHtml = `
+            <button class="modal-close" onclick="closeModal()">✕</button>
+            <h3>📅 更改送貨資料</h3>
+            <p style="color:#95a5a6; font-size:12px;">客人：${record.customerName} | 訂單：#${record.orderNumber || '-'} | ${record.supplier} - ${record.item}</p>
+            <div class="form-group">
+                <label>送貨日期</label>
+                <input type="date" id="edit-delivery-date" value="${record.deliveryDate}">
+            </div>
+            <div class="form-group">
+                <label>送貨地址</label>
+                <input type="text" id="edit-delivery-address" value="${record.deliveryAddress}">
+            </div>
+            <div style="text-align:right; margin-top:20px;">
+                <button class="btn btn-primary" onclick="saveDeliveryEdit(${rowIndex})">儲存變更</button>
+            </div>
+        `;
+    } else if (type === 'product') {
+        modalHtml = `
+            <button class="modal-close" onclick="closeModal()">✕</button>
+            <h3>📦 更改產品/數量</h3>
+            <p style="color:#95a5a6; font-size:12px;">客人：${record.customerName} | 訂單：#${record.orderNumber || '-'} | ${record.supplier} - ${record.item}</p>
+            <div class="form-group">
+                <label>項目</label>
+                <select id="edit-item">
+                    ${configData.items.map(i => `<option value="${i}" ${i === record.item ? 'selected' : ''}>${i}</option>`).join('')}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>產品及數量</label>
+                <textarea id="edit-product-qty">${record.productQty}</textarea>
+            </div>
+            <div style="text-align:right; margin-top:20px;">
+                <button class="btn btn-primary" onclick="saveProductEdit(${rowIndex})">儲存變更</button>
+            </div>
+        `;
+    } else if (type === 'remark') {
+        modalHtml = `
+            <button class="modal-close" onclick="closeModal()">✕</button>
+            <h3>📝 更改 Remark</h3>
+            <p style="color:#95a5a6; font-size:12px;">客人：${record.customerName} | 訂單：#${record.orderNumber || '-'} | ${record.supplier} - ${record.item}</p>
+            <div class="form-group">
+                <label>備註 (Remark)</label>
+                <textarea id="edit-remark">${record.remark || ''}</textarea>
+            </div>
+            <div style="text-align:right; margin-top:20px;">
+                <button class="btn btn-primary" onclick="saveRemarkEdit(${rowIndex})">儲存變更</button>
+            </div>
+        `;
+    }
+    showModal(modalHtml);
+}
+
+async function saveDeliveryEdit(rowIndex) {
+    const date = document.getElementById('edit-delivery-date').value;
+    const address = document.getElementById('edit-delivery-address').value.trim();
+    showLoading();
+    try {
+        // H欄(col 8): 送貨日期, I欄(col 9): 送貨地址
+        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 8, value: date });
+        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 9, value: address });
+        await loadRecords();
+        closeModal();
+        renderCurrentPage();
+        showToast('送貨資料已更新！');
+    } catch (e) {
+        showToast('更新失敗', 'error');
+    }
+    hideLoading();
+}
+
+async function saveProductEdit(rowIndex) {
+    const item = document.getElementById('edit-item').value;
+    const qty = document.getElementById('edit-product-qty').value.trim();
+    showLoading();
+    try {
+        // C欄(col 3): 項目, D欄(col 4): 產品及數量
+        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 3, value: item });
+        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 4, value: qty });
+        await loadRecords();
+        closeModal();
+        renderCurrentPage();
+        showToast('產品資料已更新！');
+    } catch (e) {
+        showToast('更新失敗', 'error');
+    }
+    hideLoading();
+}
+
+async function saveRemarkEdit(rowIndex) {
+    const remark = document.getElementById('edit-remark').value.trim();
+    showLoading();
+    try {
+        // J欄(col 10): remark
+        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 10, value: remark });
+        await loadRecords();
+        closeModal();
+        renderCurrentPage();
+        showToast('Remark 已更新！');
+    } catch (e) {
+        showToast('更新失敗', 'error');
+    }
+    hideLoading();
+}
+
+// ============================================================
+// PAGE: 流水帳管理 (Admin)
+// ============================================================
+function renderLedgerPage(container) {
+    container.innerHTML = `
+        <div class="page-title">📒 流水帳記錄管理</div>
+        <div class="filter-bar">
+            <input type="text" id="ledger-search" placeholder="搜尋..." oninput="renderLedgerTable()">
+            <select id="ledger-supplier-filter" onchange="renderLedgerTable()">
+                <option value="">全部供應商</option>
+                ${configData.suppliers.map(s => `<option value="${s}">${s}</option>`).join('')}
+            </select>
+            <select id="ledger-status-filter" onchange="renderLedgerTable()">
+                <option value="">全部狀態</option>
+                <option value="set">已設定</option>
+                <option value="unset">未設定</option>
+            </select>
+            <input type="month" id="ledger-month-filter" onchange="renderLedgerTable()" title="篩選 Report 月份">
+        </div>
+        <div id="ledger-table-container"></div>
+    `;
+    renderLedgerTable();
+}
+
+function renderLedgerTable() {
+    const search = (document.getElementById('ledger-search').value || '').toLowerCase();
+    const supplierFilter = document.getElementById('ledger-supplier-filter').value;
+    const statusFilter = document.getElementById('ledger-status-filter').value;
+    const monthFilter = document.getElementById('ledger-month-filter').value;
+
+    let records = getVisibleRecords();
+    records.sort((a, b) => new Date(b.timestamp || '0000-01-01') - new Date(a.timestamp || '0000-01-01'));
+
+    if (search) {
+        records = records.filter(r =>
+            r.customerName.toLowerCase().includes(search) ||
+            r.supplier.toLowerCase().includes(search) ||
+            r.item.toLowerCase().includes(search) ||
+            r.productQty.toLowerCase().includes(search) ||
+            r.orderNumber.toLowerCase().includes(search)
+        );
+    }
+    if (supplierFilter) {
+        records = records.filter(r => r.supplier === supplierFilter);
+    }
+    if (statusFilter === 'set') {
+        records = records.filter(r => r.reportMonth);
+    } else if (statusFilter === 'unset') {
+        records = records.filter(r => !r.reportMonth);
+    }
+    if (monthFilter) {
+        records = records.filter(r => r.reportMonth === monthFilter);
+    }
+
+    const tableContainer = document.getElementById('ledger-table-container');
+    if (records.length === 0) {
+        tableContainer.innerHTML = '<div class="card" style="text-align:center; color:#95a5a6;">沒有找到記錄</div>';
+        return;
+    }
+
+    tableContainer.innerHTML = `
+        <table class="data-table" style="table-layout:auto; width:100%;">
+            <thead>
+                <tr>
+                    <th>日期</th>
+                    <th>供應商</th>
+                    <th>項目</th>
+                    <th>訂單編號</th>
+                    <th>客人</th>
+                    <th>數量</th>
+                    <th>送貨日期</th>
+                    <th>送貨進度</th>
+                    <th>Report月份</th>
+                    <th>提交供應商</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${records.map(r => `
+                <tr>
+                    <td style="white-space:nowrap; font-size:12px;">${dateOnly(r.timestamp)}</td>
+                    <td>${r.supplier || '-'}</td>
+                    <td>${r.item || '-'}</td>
+                    <td style="font-weight:bold;">${r.orderNumber ? '#' + r.orderNumber : '-'}</td>
+                    <td>${r.customerName || '-'}</td>
+                    <td style="font-size:12px; white-space:pre-wrap;">${r.productQty || '-'}</td>
+                    <td style="white-space:nowrap;">${dateWithWeekday(r.deliveryDate)}</td>
+                    <td><span class="badge ${r.deliveryStatus === '已送達' ? 'badge-delivered' : 'badge-pending'}">${r.deliveryStatus || '待出貨'}</span></td>
+                    <td style="white-space:nowrap;">${monthOnly(r.reportMonth) || '<span style="color:#e74c3c; font-size:11px;">未設定</span>'}</td>
+                    <td>
+                        <label class="toggle-switch">
+                            <input type="checkbox" ${r.purchaseChannel === '已提交' ? 'checked' : ''} onchange="toggleSubmitStatus(${r.rowIndex}, this.checked)">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </td>
+                    <td>
+                        <button class="btn btn-warning btn-sm" onclick="openLedgerEditModal(${r.rowIndex})">編輯</button>
+                    </td>
+                </tr>`).join('')}
+            </tbody>
+        </table>
+    `;
+}
+
+async function toggleSubmitStatus(rowIndex, checked) {
+    try {
+        const value = checked ? '已提交' : '';
+        // M欄(col 13): 購買渠道（用作提交供應商狀態）
+        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 13, value: value });
+        const record = recordsData.find(r => r.rowIndex === rowIndex);
+        if (record) record.purchaseChannel = value;
+        showToast(checked ? '已標記為已提交' : '已取消提交標記');
+    } catch (e) {
+        showToast('更新失敗', 'error');
+    }
+}
+
+function openLedgerEditModal(rowIndex) {
+    const record = recordsData.find(r => r.rowIndex === rowIndex);
+    if (!record) return;
+
+    const modalHtml = `
+        <button class="modal-close" onclick="closeModal()">✕</button>
+        <h3>📝 編輯流水帳記錄</h3>
+        <div class="form-row">
+            <div class="form-group">
+                <label>供應商</label>
+                <select id="ledger-edit-supplier">
+                    ${configData.suppliers.map(s => `<option value="${s}" ${s === record.supplier ? 'selected' : ''}>${s}</option>`).join('')}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>項目</label>
+                <select id="ledger-edit-item">
+                    ${configData.items.map(i => `<option value="${i}" ${i === record.item ? 'selected' : ''}>${i}</option>`).join('')}
+                </select>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>客人姓名</label>
+                <input type="text" id="ledger-edit-customer" value="${record.customerName}">
+            </div>
+            <div class="form-group">
+                <label>訂單編號</label>
+                <input type="text" id="ledger-edit-order-number" value="${record.orderNumber}">
+            </div>
+        </div>
+        <div class="form-group">
+            <label>產品及數量</label>
+            <textarea id="ledger-edit-qty">${record.productQty}</textarea>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>送貨日期</label>
+                <input type="date" id="ledger-edit-date" value="${record.deliveryDate}">
+            </div>
+            <div class="form-group">
+                <label>Report 月份</label>
+                <input type="month" id="ledger-edit-month" value="${record.reportMonth}">
+            </div>
+        </div>
+        <div class="form-group">
+            <label>備註</label>
+            <input type="text" id="ledger-edit-remark" value="${record.remark}">
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-top:20px;">
+            <button class="btn btn-danger btn-sm" onclick="deleteLedgerRecord(${rowIndex})">🗑️ 刪除記錄</button>
+            <button class="btn btn-primary" onclick="saveLedgerEdit(${rowIndex})">儲存變更</button>
+        </div>
+    `;
+    showModal(modalHtml);
+}
+
+async function saveLedgerEdit(rowIndex) {
+    const supplier = document.getElementById('ledger-edit-supplier').value;
+    const item = document.getElementById('ledger-edit-item').value;
+    const customer = document.getElementById('ledger-edit-customer').value.trim();
+    const orderNumber = document.getElementById('ledger-edit-order-number').value.trim();
+    const qty = document.getElementById('ledger-edit-qty').value.trim();
+    const date = document.getElementById('ledger-edit-date').value;
+    const month = document.getElementById('ledger-edit-month').value;
+    const remark = document.getElementById('ledger-edit-remark').value.trim();
+
+    showLoading();
+    try {
+        // B(2):供應商, C(3):項目, D(4):產品及數量, E(5):客人, F(6):電話, G(7):訂單編號, H(8):送貨日期, J(10):remark, N(14):report月份
+        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 2, value: supplier });
+        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 3, value: item });
+        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 4, value: qty });
+        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 5, value: customer });
+        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 7, value: orderNumber });
+        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 8, value: date });
+        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 10, value: remark });
+        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 14, value: month });
+        await loadRecords();
+        closeModal();
+        renderCurrentPage();
+        showToast('記錄已更新！');
+    } catch (e) {
+        showToast('更新失敗', 'error');
+    }
+    hideLoading();
+}
+
+async function deleteLedgerRecord(rowIndex) {
+    if (!confirm('確定要刪除此記錄嗎？此操作無法復原。')) return;
+    showLoading();
+    try {
+        await gasPost({ action: 'deleteRow', sheet: 'Records', row: rowIndex });
+        await loadRecords();
+        closeModal();
+        renderCurrentPage();
+        showToast('記錄已刪除');
+    } catch (e) {
+        showToast('刪除失敗', 'error');
+    }
+    hideLoading();
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
+function getVisibleRecords() {
+    if (isAdmin()) return [...recordsData];
+    return recordsData.filter(r => r.supplier === currentUser.role);
+}
+
+// ============================================================
+// MODAL
+// ============================================================
+function showModal(html) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'activeModal';
+    overlay.onclick = (e) => { if (e.target === overlay) closeModal(); };
+    overlay.innerHTML = `<div class="modal-content">${html}</div>`;
+    document.body.appendChild(overlay);
+}
+
+function closeModal() {
+    const modal = document.getElementById('activeModal');
+    if (modal) modal.remove();
+}
+</script>
+</body>
+</html>
