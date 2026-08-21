@@ -1626,23 +1626,25 @@ function parseOrderText(text, fileName = '') {
     // Build product detail text
     let productDetails = [];
     for (let i = 0; i < productNames.length; i++) {
-        let detail = productNames[i];
+        let pName = productNames[i];
         let qty = quantities[i] || '1';
-        detail += ' x ' + qty;
         
-        // Extract tea flavors if applicable
-        const idx = text.indexOf(productNames[i]);
-        if (idx !== -1) {
-            const afterProduct = text.substring(idx + productNames[i].length, idx + productNames[i].length + 300);
-            const flavors = [];
-            const flavorRegex = /(茉莉花|桂花|大吉嶺|焙茶)\s*(\d+)\s*支/g;
-            let fMatch;
-            while ((fMatch = flavorRegex.exec(afterProduct)) !== null) {
-                if (parseInt(fMatch[2]) > 0) flavors.push(`${fMatch[1]}${fMatch[2]}支`);
-            }
-            if (flavors.length > 0) detail += '\n' + flavors.join(' ');
+        // Special handling for Saicho tea flavors in quantity
+        if (pName.includes('Saicho') || pName.includes('氣泡茶')) {
+            // Clean up quantity: remove standalone numbers that often appear in Excel grids (like total bottle counts)
+            // e.g., "3 箱 18 18 茉莉花 6 支" -> "3 箱 茉莉花 6 支"
+            
+            // 1. Remove all standalone numbers that are NOT followed by "支" but are followed by a flavor name
+            qty = qty.replace(/\b\d+\b(?!\s*支)(?=[\s\d]*(茉莉花|桂花|大吉嶺|焙茶))/g, '');
+            
+            // 2. Clean up extra spaces
+            qty = qty.replace(/\s+/g, ' ').trim();
+            
+            // 3. Format flavors with commas
+            qty = qty.replace(/(支)\s+(?=茉莉花|桂花|大吉嶺|焙茶)/g, '$1, ');
         }
-        productDetails.push(detail);
+
+        productDetails.push({ name: pName, qty: qty });
     }
 
     // Extract phone number
@@ -1713,42 +1715,35 @@ function parseOrderText(text, fileName = '') {
 
     // Fill product items
     if (productDetails.length > 0) {
-        // Set the product qty text in the first item
-        const fullProductText = productDetails.join('\n');
-        // Reset items container with a single text display
         inboundItemCount = 1;
         const itemsContainer = document.getElementById('inbound-items-container');
-        const itemSelects = itemsContainer.querySelectorAll('.inbound-item-select');
-        const itemQtys = itemsContainer.querySelectorAll('.inbound-item-qty');
+        itemsContainer.innerHTML = ''; // Clear and rebuild
+        
+        for (let i = 0; i < productDetails.length; i++) {
+            addInboundItem();
+        }
 
-        // Try to match first product to a config item
-        if (itemSelects.length > 0 && supplier) {
-            // For each product, add an item row
-            for (let i = 0; i < productDetails.length; i++) {
-                if (i > 0) addInboundItem();
-            }
-            // Now fill them
-            const allSelects = document.querySelectorAll('.inbound-item-select');
-            const allQtys = document.querySelectorAll('.inbound-item-qty');
-            for (let i = 0; i < productDetails.length; i++) {
-                // Normalize for matching: remove all spaces, dashes, and brackets to find the core name
-                const normalize = (s) => s.toUpperCase().replace(/[\s\-\(\)（）]/g, '');
-                const rawNameNorm = normalize(productNames[i] || '');
-                const qty = quantities[i] || '1';
-                
-                if (allSelects[i]) {
-                    for (let j = 0; j < allSelects[i].options.length; j++) {
-                        const optVal = allSelects[i].options[j].value;
-                        const optValNorm = normalize(optVal);
-                        
-                        if (optVal !== "" && (rawNameNorm.includes(optValNorm) || optValNorm.includes(rawNameNorm))) {
-                            allSelects[i].selectedIndex = j;
-                            break;
-                        }
+        const allSelects = document.querySelectorAll('.inbound-item-select');
+        const allQtys = document.querySelectorAll('.inbound-item-qty');
+        
+        for (let i = 0; i < productDetails.length; i++) {
+            const p = productDetails[i];
+            // Normalize for matching: remove all spaces, dashes, brackets, and "的"
+            const normalize = (s) => s.toUpperCase().replace(/[\s\-\(\)（）的]/g, '');
+            const rawNameNorm = normalize(p.name || '');
+            
+            if (allSelects[i]) {
+                for (let j = 0; j < allSelects[i].options.length; j++) {
+                    const optVal = allSelects[i].options[j].value;
+                    const optValNorm = normalize(optVal);
+                    
+                    if (optVal !== "" && (rawNameNorm.includes(optValNorm) || optValNorm.includes(rawNameNorm))) {
+                        allSelects[i].selectedIndex = j;
+                        break;
                     }
                 }
-                if (allQtys[i]) allQtys[i].value = qty;
             }
+            if (allQtys[i]) allQtys[i].value = p.qty;
         }
     }
 }
