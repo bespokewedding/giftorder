@@ -584,6 +584,10 @@ function checkDuplicateOrderNumber() {
     if (!input || !warning) return false;
     
     const val = input.value.trim();
+    
+    // Auto-select supplier based on prefix if not already selected
+    autoSelectSupplierByOrderNumber(val);
+
     if (!val) {
         warning.style.display = 'none';
         return false;
@@ -601,6 +605,48 @@ function checkDuplicateOrderNumber() {
         warning.style.display = 'none';
         input.style.borderColor = 'var(--border)';
         return false;
+    }
+}
+
+function autoSelectSupplierByOrderNumber(orderNum) {
+    if (!orderNum || !configData.prefixes) return;
+    const supplierSelect = document.getElementById('inbound-supplier');
+    if (!supplierSelect) return;
+
+    const cleanNum = orderNum.trim().toUpperCase();
+    const sortedPrefixes = [...configData.prefixes].sort((a, b) => b.prefix.length - a.prefix.length);
+    
+    for (const p of sortedPrefixes) {
+        if (cleanNum.startsWith(p.prefix.toUpperCase())) {
+            const target = p.supplier.trim().toUpperCase().replace(/\s+/g, '');
+            for (let i = 0; i < supplierSelect.options.length; i++) {
+                const opt = supplierSelect.options[i].value.trim().toUpperCase().replace(/\s+/g, '');
+                if (opt !== "" && (opt.includes(target) || target.includes(opt))) {
+                    if (supplierSelect.selectedIndex !== i) {
+                        supplierSelect.selectedIndex = i;
+                        onSupplierChange();
+                        showToast(`已根據編號識別供應商：${supplierSelect.options[i].value}`, 'info');
+                    }
+                    return;
+                }
+            }
+        }
+    }
+    
+    // Fallback: Search prefix letters directly in supplier names
+    const prefixLetters = cleanNum.split(/[-0-9]/)[0];
+    if (prefixLetters && prefixLetters.length >= 2) {
+        for (let i = 0; i < supplierSelect.options.length; i++) {
+            const opt = supplierSelect.options[i].value.trim().toUpperCase();
+            if (opt.includes(prefixLetters)) {
+                if (supplierSelect.selectedIndex !== i) {
+                    supplierSelect.selectedIndex = i;
+                    onSupplierChange();
+                    showToast(`已模糊識別供應商：${supplierSelect.options[i].value}`, 'info');
+                }
+                return;
+            }
+        }
     }
 }
 
@@ -791,7 +837,7 @@ function buildNavigation() {
         { id: 'inbound', label: '📥 訂單登記', adminOnly: true },
         { id: 'outbound', label: '🎁 回禮出貨管理', adminOnly: false },
         { id: 'monthly', label: '📅 訂單總匯(月份)', adminOnly: false },
-        { id: 'status', label: '📊 訂單近況', adminOnly: true },
+        { id: 'status', label: '📊 訂單近況(Admin)', adminOnly: true },
         { id: 'edit', label: '✏️ 更改訂單', adminOnly: true },
         { id: 'ledger', label: '📒 流水帳管理', adminOnly: true },
         { id: 'prefix', label: '🏷️ 前綴管理', adminOnly: true },
@@ -963,7 +1009,7 @@ function renderInboundPage(container) {
                 <div class="form-group" style="display:flex; align-items:center; gap:10px; padding-top:20px;">
                     <label style="margin-bottom:0;">提交供應商</label>
                     <label class="toggle-switch">
-                        <input type="checkbox" id="inbound-submit-status">
+                        <input type="checkbox" id="inbound-submit-status" checked>
                         <span class="toggle-slider"></span>
                     </label>
                 </div>
@@ -1118,7 +1164,7 @@ async function submitInbound() {
         document.getElementById('inbound-address').value = '';
         document.getElementById('inbound-remark').value = '';
         document.getElementById('inbound-channel').selectedIndex = 0;
-        document.getElementById('inbound-submit-status').checked = false;
+        document.getElementById('inbound-submit-status').checked = true;
         // Reset PDF upload
         const pdfInput = document.getElementById('pdf-upload');
         if (pdfInput) pdfInput.value = '';
@@ -1205,7 +1251,7 @@ async function processPdf(file, statusEl) {
         });
     }
     console.log('PDF extracted text:', fullText);
-    parseOrderText(fullText);
+    parseOrderText(fullText, file.name);
     statusEl.textContent = '✓ PDF 識別完成';
     statusEl.style.color = 'var(--success)';
 }
@@ -1225,19 +1271,46 @@ async function processExcel(file, statusEl) {
     });
     
     console.log('Excel extracted text:', fullText);
-    parseOrderText(fullText);
+    parseOrderText(fullText, file.name);
     statusEl.textContent = '✓ Excel 識別完成';
     statusEl.style.color = 'var(--success)';
 }
 
-function parseOrderText(text) {
-    console.log('Parsing order text...');
+function parseOrderText(text, fileName = '') {
+    console.log('Parsing order text...', fileName ? 'Filename: ' + fileName : '');
     const lines = text.split('\n').map(l => l.trim()).filter(l => l);
     
     // Extract Order # - based on configurable prefixes
     let orderNumber = '';
     let supplier = '';
+
+    // 1. Try to identify supplier from FILENAME first
+    if (fileName) {
+        const fn = fileName.toUpperCase();
+        // Check prefixes in filename
+        if (configData.prefixes) {
+            const sortedPrefixes = [...configData.prefixes].sort((a, b) => b.prefix.length - a.prefix.length);
+            for (const p of sortedPrefixes) {
+                if (fn.includes(p.prefix.toUpperCase())) {
+                    supplier = p.supplier;
+                    console.log('Supplier identified from filename prefix:', supplier);
+                    break;
+                }
+            }
+        }
+        // Check full supplier names in filename if still not found
+        if (!supplier && configData.suppliers) {
+            for (const s of configData.suppliers) {
+                if (fn.includes(s.toUpperCase())) {
+                    supplier = s;
+                    console.log('Supplier identified from filename text:', supplier);
+                    break;
+                }
+            }
+        }
+    }
     
+    // 2. Extract from CONTENT if still missing or to find Order #
     if (configData.prefixes && configData.prefixes.length > 0) {
         // Sort prefixes by length descending to match longest first (e.g., GBBM before GB)
         const sortedPrefixes = [...configData.prefixes].sort((a, b) => b.prefix.length - a.prefix.length);
@@ -1357,45 +1430,83 @@ function parseOrderText(text) {
     // Actual format from pdf.js:
     //   "產品名字：" (next line) "Saicho xxx"  OR  "產品名字：  Saicho xxx"
     //   "數量：" (next line) "1箱"  OR  "數量：  1箱"
-    const productNames = [];
-    const quantities = [];
+    let productNames = [];
+    let quantities = [];
+    
+    // 1. Label-based recognition (Improved to support numbered labels like (1), (2))
     for (let i = 0; i < lines.length; i++) {
-        if (/產品名字\s*[：:]/.test(lines[i])) {
-            // Check same line
-            const sameLine = lines[i].match(/產品名字\s*[：:]\s*(.+)/);
+        const productLabelMatch = lines[i].match(/產品名字(?:\(\d+\))?\s*[：:]/);
+        if (productLabelMatch) {
+            let pName = '';
+            const sameLine = lines[i].match(/產品名字(?:\(\d+\))?\s*[：:]\s*(.+)/);
             if (sameLine && sameLine[1].trim()) {
-                productNames.push(sameLine[1].trim());
-            } else if (i + 1 < lines.length) {
-                // Next line is the product name
-                productNames.push(lines[i + 1].trim());
+                pName = sameLine[1].trim();
+            } else if (i + 1 < lines.length && !lines[i+1].includes(':')) {
+                pName = lines[i + 1].trim();
             }
-        }
-        if (/數量\s*[：:]/.test(lines[i])) {
-            const sameLine = lines[i].match(/數量\s*[：:]\s*(.+)/);
-            if (sameLine && sameLine[1].trim()) {
-                quantities.push(sameLine[1].trim());
-            } else if (i + 1 < lines.length) {
-                quantities.push(lines[i + 1].trim());
+            
+            // Only add if not empty and not just a label
+            if (pName && !pName.includes('產品名字') && !pName.includes('數量')) {
+                // Strip "回禮-" prefix if exists
+                pName = pName.replace(/^回禮\s*-\s*/, '').trim();
+                productNames.push(pName);
+                
+                // Try to find quantity for THIS specific product
+                let foundQty = '1';
+                for (let j = i; j < Math.min(i + 5, lines.length); j++) {
+                    const qMatch = lines[j].match(/數量(?:\(\d+\))?\s*[：:]\s*(.+)/);
+                    if (qMatch && qMatch[1].trim()) {
+                        foundQty = qMatch[1].trim();
+                        if (foundQty.includes('客人資料')) foundQty = foundQty.split('客人資料')[0].trim();
+                        break;
+                    } else if (lines[j].includes('數量') && j + 1 < lines.length && !lines[j+1].includes(':')) {
+                        foundQty = lines[j+1].trim();
+                        if (foundQty.includes('客人資料')) foundQty = foundQty.split('客人資料')[0].trim();
+                        break;
+                    }
+                }
+                quantities.push(foundQty);
             }
         }
     }
-    console.log('Products:', productNames, 'Quantities:', quantities);
 
-    // Build product detail text with tea flavors
+    // 2. Keyword-based recognition (Fuzzy matching with config items)
+    if (productNames.length === 0 && configData.items) {
+        // Only look for items belonging to the identified supplier if possible
+        const searchItems = (supplier && configData.supplierItems[supplier]) ? configData.supplierItems[supplier] : configData.items;
+        
+        for (const itemName of searchItems) {
+            if (text.includes(itemName)) {
+                productNames.push(itemName);
+                // Look for quantity nearby (x N or N份/瓶/箱)
+                const afterText = text.substring(text.indexOf(itemName) + itemName.length, text.indexOf(itemName) + itemName.length + 50);
+                const qtyMatch = afterText.match(/[x\*\s：:]\s*(\d+)|(\d+)\s*(?:份|瓶|箱|個|支)/i);
+                quantities.push(qtyMatch ? (qtyMatch[1] || qtyMatch[2]) : '1');
+            }
+        }
+    }
+    
+    console.log('Detected Products:', productNames, 'Quantities:', quantities);
+
+    // Build product detail text
     let productDetails = [];
     for (let i = 0; i < productNames.length; i++) {
         let detail = productNames[i];
-        if (quantities[i]) detail += ' x ' + quantities[i];
-        // Try to extract tea flavors after each product
-        const afterProduct = text.substring(text.indexOf(productNames[i]) + productNames[i].length);
-        const flavors = [];
-        const flavorRegex = /(茉莉花|桂花|大吉嶺|焙茶)\s*(\d+)\s*支/g;
-        let fMatch;
-        let searchText = afterProduct.substring(0, 200); // limit search
-        while ((fMatch = flavorRegex.exec(searchText)) !== null) {
-            if (parseInt(fMatch[2]) > 0) flavors.push(`${fMatch[1]}${fMatch[2]}支`);
+        let qty = quantities[i] || '1';
+        detail += ' x ' + qty;
+        
+        // Extract tea flavors if applicable
+        const idx = text.indexOf(productNames[i]);
+        if (idx !== -1) {
+            const afterProduct = text.substring(idx + productNames[i].length, idx + productNames[i].length + 300);
+            const flavors = [];
+            const flavorRegex = /(茉莉花|桂花|大吉嶺|焙茶)\s*(\d+)\s*支/g;
+            let fMatch;
+            while ((fMatch = flavorRegex.exec(afterProduct)) !== null) {
+                if (parseInt(fMatch[2]) > 0) flavors.push(`${fMatch[1]}${fMatch[2]}支`);
+            }
+            if (flavors.length > 0) detail += '\n' + flavors.join(' ');
         }
-        if (flavors.length > 0) detail += '\n' + flavors.join(' ');
         productDetails.push(detail);
     }
 
@@ -1418,10 +1529,13 @@ function parseOrderText(text) {
     // Fill form fields
     if (supplier) {
         const supplierSelect = document.getElementById('inbound-supplier');
+        const target = supplier.trim().toUpperCase().replace(/\s+/g, '');
         for (let i = 0; i < supplierSelect.options.length; i++) {
-            if (supplierSelect.options[i].value === supplier) {
+            const opt = supplierSelect.options[i].value.trim().toUpperCase().replace(/\s+/g, '');
+            if (opt !== "" && (opt.includes(target) || target.includes(opt))) {
                 supplierSelect.selectedIndex = i;
                 onSupplierChange();
+                showToast(`已識別供應商：${supplierSelect.options[i].value}`, 'info');
                 break;
             }
         }
@@ -1448,7 +1562,6 @@ function parseOrderText(text) {
 
         // Try to match first product to a config item
         if (itemSelects.length > 0 && supplier) {
-            const supplierItemsList = configData.supplierItems[supplier] || configData.items;
             // For each product, add an item row
             for (let i = 0; i < productDetails.length; i++) {
                 if (i > 0) addInboundItem();
@@ -1457,15 +1570,14 @@ function parseOrderText(text) {
             const allSelects = document.querySelectorAll('.inbound-item-select');
             const allQtys = document.querySelectorAll('.inbound-item-qty');
             for (let i = 0; i < productDetails.length; i++) {
-                const pName = productNames[i] || '';
+                const rawName = (productNames[i] || '').toUpperCase().replace(/\s+/g, '');
                 const qty = quantities[i] || '1';
-                // Try to match product name to supplier items
+                
                 if (allSelects[i]) {
-                    let matched = false;
                     for (let j = 0; j < allSelects[i].options.length; j++) {
-                        if (pName.includes(allSelects[i].options[j].value) || allSelects[i].options[j].value.includes(pName.split('x')[0].trim())) {
+                        const optVal = allSelects[i].options[j].value.toUpperCase().replace(/\s+/g, '');
+                        if (optVal !== "" && (rawName.includes(optVal) || optVal.includes(rawName))) {
                             allSelects[i].selectedIndex = j;
-                            matched = true;
                             break;
                         }
                     }
@@ -1871,7 +1983,7 @@ function renderStatusPage(container) {
     const currentMonth = getCurrentMonth();
 
     container.innerHTML = `
-        <div class="page-title">📊 訂單近況</div>
+        <div class="page-title">📊 訂單近況(Admin)</div>
         <div class="filter-bar">
             <label style="font-size:12px; align-self:center; font-weight:bold;">顯示月份：</label>
             <input type="month" id="status-month" value="${currentMonth}" onchange="renderStatusContent()">
