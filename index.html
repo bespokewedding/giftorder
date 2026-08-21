@@ -381,6 +381,45 @@
         .toast-info { background: var(--accent); }
         @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
+        /* Global Alert */
+        .global-alert-container {
+            position: sticky;
+            top: 89px; /* Below nav-bar and mobile-nav */
+            z-index: 999;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+        }
+        @media (max-width: 768px) {
+            .global-alert-container { top: 82px; }
+        }
+        .global-alert {
+            background: var(--danger);
+            color: white;
+            padding: 10px 20px;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            animation: slideDown 0.3s ease;
+            font-size: 13px;
+        }
+        .global-alert button {
+            background: rgba(255,255,255,0.2);
+            border: 1px solid white;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-left: 15px;
+            white-space: nowrap;
+        }
+        .global-alert button:hover { background: rgba(255,255,255,0.3); }
+        @keyframes slideDown { from { transform: translateY(-100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
         /* Team Page Layout */
         .team-container { display: grid; grid-template-columns: 250px 1fr; gap: 20px; }
         .user-list { background: var(--white); border-radius: 10px; padding: 15px; border: 1px solid var(--border); }
@@ -491,6 +530,9 @@
 
     <!-- Mobile Navigation -->
     <div class="mobile-nav" id="mobileNav"></div>
+    
+    <!-- Global Alert Container -->
+    <div id="globalAlertContainer" class="global-alert-container"></div>
 
     <div class="app-layout">
         <div class="sidebar" id="sidebarNav"></div>
@@ -536,11 +578,28 @@ function showLoading() { document.getElementById('loadingOverlay').style.display
 function hideLoading() { document.getElementById('loadingOverlay').style.display = 'none'; }
 
 function showToast(msg, type = 'success') {
+    if (type === 'error') {
+        showGlobalAlert(msg);
+        return;
+    }
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
     toast.textContent = msg;
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 3000);
+}
+
+function showGlobalAlert(msg) {
+    const container = document.getElementById('globalAlertContainer');
+    const alert = document.createElement('div');
+    alert.className = 'global-alert';
+    alert.innerHTML = `
+        <span>⚠️ ${msg}</span>
+        <button onclick="this.parentElement.remove()">我已確認</button>
+    `;
+    container.appendChild(alert);
+    // Auto-scroll to top to ensure user sees it
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function getNowStr() {
@@ -1509,8 +1568,12 @@ function parseOrderText(text, fileName = '') {
             
             // Only add if not empty and not just a label
             if (pName && !pName.includes('產品名字') && !pName.includes('數量')) {
-                // Strip "回禮-" prefix if exists
-                pName = pName.replace(/^回禮\s*-\s*/, '').trim();
+                // Strip prefixes and normalize format
+                // 1. Strip "回禮-" or "婚禮回禮-"
+                pName = pName.replace(/^(婚禮回禮|回禮)\s*-\s*/, '').trim();
+                // 2. Normalize middle dashes and extra spaces (e.g., " -  " -> " ")
+                pName = pName.replace(/\s*-\s*/g, ' ').replace(/\s+/g, ' ').trim();
+                
                 productNames.push(pName);
                 
                 // Try to find quantity for THIS specific product
@@ -1635,13 +1698,17 @@ function parseOrderText(text, fileName = '') {
             const allSelects = document.querySelectorAll('.inbound-item-select');
             const allQtys = document.querySelectorAll('.inbound-item-qty');
             for (let i = 0; i < productDetails.length; i++) {
-                const rawName = (productNames[i] || '').toUpperCase().replace(/\s+/g, '');
+                // Normalize for matching: remove all spaces, dashes, and brackets to find the core name
+                const normalize = (s) => s.toUpperCase().replace(/[\s\-\(\)（）]/g, '');
+                const rawNameNorm = normalize(productNames[i] || '');
                 const qty = quantities[i] || '1';
                 
                 if (allSelects[i]) {
                     for (let j = 0; j < allSelects[i].options.length; j++) {
-                        const optVal = allSelects[i].options[j].value.toUpperCase().replace(/\s+/g, '');
-                        if (optVal !== "" && (rawName.includes(optVal) || optVal.includes(rawName))) {
+                        const optVal = allSelects[i].options[j].value;
+                        const optValNorm = normalize(optVal);
+                        
+                        if (optVal !== "" && (rawNameNorm.includes(optValNorm) || optValNorm.includes(rawNameNorm))) {
                             allSelects[i].selectedIndex = j;
                             break;
                         }
