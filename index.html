@@ -1576,21 +1576,31 @@ function parseOrderText(text, fileName = '') {
                 
                 productNames.push(pName);
                 
-                // Try to find quantity for THIS specific product
-                let foundQty = '1';
-                for (let j = i; j < Math.min(i + 5, lines.length); j++) {
-                    const qMatch = lines[j].match(/數量(?:\(\d+\))?\s*[：:]\s*(.+)/);
-                    if (qMatch && qMatch[1].trim()) {
-                        foundQty = qMatch[1].trim();
-                        if (foundQty.includes('客人資料')) foundQty = foundQty.split('客人資料')[0].trim();
-                        break;
-                    } else if (lines[j].includes('數量') && j + 1 < lines.length && !lines[j+1].includes(':')) {
-                        foundQty = lines[j+1].trim();
-                        if (foundQty.includes('客人資料')) foundQty = foundQty.split('客人資料')[0].trim();
+                // Try to find quantity for THIS specific product (Improved to capture multiple lines)
+                let foundQty = '';
+                for (let j = i; j < Math.min(i + 8, lines.length); j++) {
+                    const qLabelMatch = lines[j].match(/數量(?:\(\d+\))?\s*[：:]/);
+                    if (qLabelMatch) {
+                        // 1. Get content on the same line
+                        const sameLine = lines[j].split(/[：:]/).slice(1).join(':').trim();
+                        foundQty = sameLine;
+                        
+                        // 2. Look at subsequent lines to capture multi-line details (like colors)
+                        for (let k = j + 1; k < Math.min(j + 5, lines.length); k++) {
+                            const nextLine = lines[k].trim();
+                            // Stop if next line looks like a new major label or section header
+                            if (nextLine.match(/^(產品名字|客人資料|客人姓名|聯絡電話|送貨|送貨地址|送貨日期|收件人|訂單送貨備註)(?:\(\d+\))?\s*[：:]/i) || 
+                                nextLine.includes('預訂產品資料') || 
+                                nextLine.includes('客人資料')) {
+                                break;
+                            }
+                            if (nextLine) foundQty += (foundQty ? '\n' : '') + nextLine;
+                        }
                         break;
                     }
                 }
-                quantities.push(foundQty);
+                if (!foundQty) foundQty = '1'; // Default to 1 if not found
+                quantities.push(foundQty.trim());
             }
         }
     }
