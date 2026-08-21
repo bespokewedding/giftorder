@@ -1771,7 +1771,7 @@ function renderOutboundPage(container) {
                 <option value="delivered" ${outboundCurrentTab==='delivered'?'selected':''}>已送達 (${delivered.length})</option>
                 <option value="all" ${outboundCurrentTab==='all'?'selected':''}>全部 (${records.length})</option>
             </select>
-            <input type="text" id="outbound-search" placeholder="搜尋客人姓名 / 單號 / 供應商..." oninput="renderOutboundList()">
+            <input type="text" id="outbound-search" placeholder="搜尋姓名 / 單號 / 供應商 / 備註..." oninput="renderOutboundList()">
             
             <div style="display:flex; gap:5px;">
                 <select id="outbound-sort-field" onchange="outboundSortField=this.value; renderOutboundList()">
@@ -1811,10 +1811,11 @@ function renderOutboundList() {
     // Search filter
     if (search) {
         records = records.filter(r =>
-            r.customerName.toLowerCase().includes(search) ||
-            r.supplier.toLowerCase().includes(search) ||
-            r.item.toLowerCase().includes(search) ||
-            r.orderNumber.toLowerCase().includes(search)
+            (r.customerName || '').toLowerCase().includes(search) ||
+            (r.supplier || '').toLowerCase().includes(search) ||
+            (r.item || '').toLowerCase().includes(search) ||
+            (r.orderNumber || '').toLowerCase().includes(search) ||
+            (r.remark || '').toLowerCase().includes(search)
         );
     }
 
@@ -2308,7 +2309,7 @@ function renderEditPage(container) {
     container.innerHTML = `
         <div class="page-title">✏️ 更改訂單資料</div>
         <div class="filter-bar">
-            <input type="text" id="edit-search" placeholder="搜尋客人姓名 / 訂單編號 / 供應商..." oninput="renderEditList()">
+            <input type="text" id="edit-search" placeholder="搜尋姓名 / 單號 / 供應商 / 備註..." style="flex:1;" oninput="renderEditList()">
             <select id="edit-supplier-filter" onchange="renderEditList()">
                 <option value="">全部供應商</option>
                 ${configData.suppliers.map(s => `<option value="${s}">${s}</option>`).join('')}
@@ -2326,10 +2327,11 @@ function renderEditList() {
 
     if (search) {
         records = records.filter(r =>
-            r.customerName.toLowerCase().includes(search) ||
-            r.supplier.toLowerCase().includes(search) ||
-            r.item.toLowerCase().includes(search) ||
-            r.orderNumber.toLowerCase().includes(search)
+            (r.customerName || '').toLowerCase().includes(search) ||
+            (r.supplier || '').toLowerCase().includes(search) ||
+            (r.item || '').toLowerCase().includes(search) ||
+            (r.orderNumber || '').toLowerCase().includes(search) ||
+            (r.remark || '').toLowerCase().includes(search)
         );
     }
     if (supplierFilter) {
@@ -2978,7 +2980,7 @@ function renderLedgerPage(container) {
     container.innerHTML = `
         <div class="page-title">📒 流水帳記錄管理</div>
         <div class="filter-bar">
-            <input type="text" id="ledger-search" placeholder="搜尋..." oninput="ledgerCurrentPage=1; renderLedgerTable()">
+            <input type="text" id="ledger-search" placeholder="搜尋姓名 / 單號 / 供應商 / 備註..." style="flex:1;" oninput="ledgerCurrentPage=1; renderLedgerTable()">
             <select id="ledger-supplier-filter" onchange="ledgerCurrentPage=1; renderLedgerTable()">
                 <option value="">全部供應商</option>
                 ${configData.suppliers.map(s => `<option value="${s}">${s}</option>`).join('')}
@@ -3010,7 +3012,8 @@ function renderLedgerTable() {
             (r.supplier || '').toLowerCase().includes(search) ||
             (r.item || '').toLowerCase().includes(search) ||
             (r.productQty || '').toLowerCase().includes(search) ||
-            (r.orderNumber || '').toLowerCase().includes(search)
+            (r.orderNumber || '').toLowerCase().includes(search) ||
+            (r.remark || '').toLowerCase().includes(search)
         );
     }
     if (supplierFilter) {
