@@ -41,9 +41,40 @@
             align-items: center;
             position: sticky;
             top: 0;
-            z-index: 1000;
+            z-index: 1001; /* Above mobile-nav */
             box-shadow: 0 2px 8px rgba(0,0,0,0.15);
         }
+        
+        .mobile-nav {
+            display: flex !important;
+            overflow-x: auto;
+            background: var(--white);
+            border-bottom: 1px solid var(--border);
+            padding: 0;
+            scrollbar-width: none;
+            position: sticky;
+            top: 48px; /* Below nav-bar */
+            z-index: 1000;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .mobile-nav::-webkit-scrollbar { display: none; }
+        .mobile-nav .nav-item {
+            padding: 12px 20px;
+            white-space: nowrap;
+            font-size: 14px;
+            cursor: pointer;
+            color: var(--text);
+            border-bottom: 3px solid transparent;
+            transition: all 0.2s;
+        }
+        .mobile-nav .nav-item:hover { background: #f8f9fa; }
+        .mobile-nav .nav-item.active {
+            border-bottom-color: var(--accent);
+            color: var(--accent);
+            font-weight: bold;
+            background: #f0f7ff;
+        }
+        .mobile-nav .nav-item.hidden { display: none; }
         .nav-bar .brand { font-size: 16px; font-weight: bold; }
         .nav-bar .user-info { font-size: 12px; opacity: 0.8; }
         .nav-bar button {
@@ -58,36 +89,13 @@
         .nav-bar button:hover { background: rgba(255,255,255,0.25); }
 
         /* Layout */
-        .app-layout { display: flex; min-height: calc(100vh - 50px); }
-        .sidebar {
-            width: 200px;
-            background: var(--white);
-            border-right: 1px solid var(--border);
-            padding: 15px 0;
-            flex-shrink: 0;
-        }
-        .sidebar .nav-item {
-            padding: 12px 20px;
-            cursor: pointer;
-            font-size: 13px;
-            color: var(--text);
-            border-left: 3px solid transparent;
-            transition: all 0.2s;
-        }
-        .sidebar .nav-item:hover { background: var(--light-bg); }
-        .sidebar .nav-item.active {
-            background: #eaf2fd;
-            border-left-color: var(--accent);
-            color: var(--accent);
-            font-weight: bold;
-        }
-        .sidebar .nav-item.hidden { display: none; }
+        .app-layout { display: flex; flex-direction: column; min-height: calc(100vh - 50px); }
+        .sidebar { display: none !important; } /* Sidebar removed */
 
         .main-content {
             flex: 1;
             padding: 20px;
             overflow-y: auto;
-            max-height: calc(100vh - 50px);
         }
 
         /* Login */
@@ -392,32 +400,61 @@
         /* Responsive */
         @media (max-width: 768px) {
             .team-container { grid-template-columns: 1fr; }
-            .sidebar { display: none; }
-            .app-layout { flex-direction: column; }
-            .main-content { max-height: none; padding: 15px; }
-            .mobile-nav {
-                display: flex !important;
-                overflow-x: auto;
-                background: var(--white);
-                border-bottom: 1px solid var(--border);
-                padding: 0;
-            }
-            .mobile-nav .nav-item {
-                padding: 10px 15px;
-                white-space: nowrap;
-                font-size: 12px;
-                border-bottom: 2px solid transparent;
-                cursor: pointer;
-            }
-            .mobile-nav .nav-item.active {
-                border-bottom-color: var(--accent);
-                color: var(--accent);
-                font-weight: bold;
-            }
-            .mobile-nav .nav-item.hidden { display: none; }
+            .main-content { padding: 15px; }
+            
+            .nav-bar { padding: 10px 15px; }
+            .nav-bar .brand { font-size: 14px; }
+            .nav-bar .user-info { display: none; }
+
+            .mobile-nav { top: 41px; } /* Sits right below the nav-bar */
+            .mobile-nav .nav-item { padding: 12px 18px; font-size: 13px; }
+
+            .filter-bar { flex-direction: column; align-items: stretch; gap: 8px; }
+            .filter-bar input, .filter-bar select { width: 100%; }
+            .filter-bar div { width: 100%; }
+            .filter-bar div select { flex: 1; }
+
+            .form-row { grid-template-columns: 1fr; gap: 10px; }
             .order-card .order-body { grid-template-columns: 1fr; }
-            .form-row { grid-template-columns: 1fr; }
-            .filter-bar { flex-direction: column; }
+            .order-card .order-header { flex-direction: column; align-items: flex-start; }
+            
+            /* Responsive Table to Cards */
+            .data-table, .data-table thead, .data-table tbody, .data-table th, .data-table td, .data-table tr { 
+                display: block; 
+            }
+            .data-table thead tr { 
+                position: absolute;
+                top: -9999px;
+                left: -9999px;
+            }
+            .data-table tr { 
+                border: 1px solid var(--border);
+                border-radius: 8px;
+                margin-bottom: 15px;
+                background: white;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            }
+            .data-table td { 
+                border: none;
+                border-bottom: 1px solid #eee; 
+                position: relative;
+                padding: 10px 12px 10px 12px !important;
+                text-align: left !important;
+                display: block;
+            }
+            .data-table td:last-child { border-bottom: none; }
+            .data-table td:before { 
+                content: attr(data-label);
+                display: block;
+                font-weight: bold;
+                color: #7f8c8d;
+                font-size: 11px;
+                margin-bottom: 4px;
+                text-transform: uppercase;
+            }
+            
+            .modal-content { width: 95%; padding: 15px; }
+        }
             .filter-bar input, .filter-bar select { width: 100%; }
         }
         @media (min-width: 769px) {
@@ -1792,14 +1829,14 @@ function renderOutboundTable(container, records) {
                     const isDelivered = r.deliveryStatus === '已送達';
                     return `
                     <tr>
-                        <td style="font-weight:bold; white-space:nowrap;">${r.orderNumber ? '#' + r.orderNumber : '-'}</td>
-                        <td style="white-space:nowrap;">${dateWithWeekday(r.deliveryDate)}</td>
-                        <td>${r.customerName || '-'}</td>
-                        <td>${r.item || '-'}</td>
-                        <td style="font-size:12px; white-space:pre-wrap;">${r.productQty || '-'}</td>
-                        <td style="font-size:12px;">${r.deliveryAddress || '-'}</td>
-                        <td style="font-size:12px;">${r.remark || '-'}</td>
-                        <td>
+                        <td data-label="訂單編號" style="font-weight:bold; white-space:nowrap;">${r.orderNumber ? '#' + r.orderNumber : '-'}</td>
+                        <td data-label="送貨日期" style="white-space:nowrap;">${dateWithWeekday(r.deliveryDate)}</td>
+                        <td data-label="客人姓名">${r.customerName || '-'}</td>
+                        <td data-label="項目">${r.item || '-'}</td>
+                        <td data-label="產品及數量" style="font-size:12px; white-space:pre-wrap;">${r.productQty || '-'}</td>
+                        <td data-label="送貨地址" style="font-size:12px;">${r.deliveryAddress || '-'}</td>
+                        <td data-label="備註" style="font-size:12px;">${r.remark || '-'}</td>
+                        <td data-label="操作">
                             <div style="display:flex; flex-direction:column; gap:4px;">
 ${isDelivered 
     ? `<div style="display:flex; flex-direction:column; align-items:center; gap:2px;">
@@ -1980,14 +2017,14 @@ function renderMonthlyContent() {
             <tbody>
                 ${records.map(r => `
                 <tr>
-                    <td style="font-weight:bold; white-space:nowrap;">${r.orderNumber ? '#' + r.orderNumber : '-'}</td>
-                    <td style="white-space:nowrap;">${dateWithWeekday(r.deliveryDate)}</td>
-                    <td>${r.customerName || '-'}</td>
-                    <td>${r.item || '-'}</td>
-                    <td style="font-size:12px; white-space:pre-wrap;">${r.productQty || '-'}</td>
-                    <td style="font-size:12px;">${r.deliveryAddress || '-'}</td>
-                    <td style="font-size:12px;">${r.remark || '-'}</td>
-                    <td><span class="badge ${r.deliveryStatus === '已送達' ? 'badge-delivered' : 'badge-pending'}">${r.deliveryStatus || '待出貨'}</span></td>
+                    <td data-label="訂單編號" style="font-weight:bold; white-space:nowrap;">${r.orderNumber ? '#' + r.orderNumber : '-'}</td>
+                    <td data-label="送貨日期" style="white-space:nowrap;">${dateWithWeekday(r.deliveryDate)}</td>
+                    <td data-label="客人姓名">${r.customerName || '-'}</td>
+                    <td data-label="項目">${r.item || '-'}</td>
+                    <td data-label="產品及數量" style="font-size:12px; white-space:pre-wrap;">${r.productQty || '-'}</td>
+                    <td data-label="送貨地址" style="font-size:12px;">${r.deliveryAddress || '-'}</td>
+                    <td data-label="備註" style="font-size:12px;">${r.remark || '-'}</td>
+                    <td data-label="送達狀態"><span class="badge ${r.deliveryStatus === '已送達' ? 'badge-delivered' : 'badge-pending'}">${r.deliveryStatus || '待出貨'}</span></td>
                 </tr>`).join('')}
             </tbody>
         </table>
@@ -2071,22 +2108,22 @@ function renderStatusContent() {
                         </tr>
                     </thead>
                     <tbody>
-                        ${monthOrders.map(r => `
-                        <tr>
-                            <td style="font-weight:bold;">${r.orderNumber ? '#' + r.orderNumber : '-'}</td>
-                            <td style="white-space:nowrap;">${dateWithWeekday(r.deliveryDate)}</td>
-                            <td>${r.deliveryAddress || '-'}</td>
-                            <td>${r.item || '-'}</td>
-                            <td>${r.productQty || '-'}</td>
-                            <td>${r.remark || '-'}</td>
-                            <td>
-                                <button class="badge ${r.deliveryStatus === '已送達' ? 'badge-delivered' : 'badge-pending'}" 
-                                    style="cursor:pointer; border:none; padding:4px 10px; border-radius:12px; font-size:11px;"
-                                    onclick="toggleDeliveryStatus(${r.rowIndex}, '${r.deliveryStatus === '已送達' ? '待出貨' : '已送達'}')">
-                                    ${r.deliveryStatus || '待出貨'}
-                                </button>
-                            </td>
-                        </tr>`).join('')}
+	                        ${monthOrders.map(r => `
+	                        <tr>
+	                            <td data-label="訂單編號" style="font-weight:bold;">${r.orderNumber ? '#' + r.orderNumber : '-'}</td>
+	                            <td data-label="送貨日期" style="white-space:nowrap;">${dateWithWeekday(r.deliveryDate)}</td>
+	                            <td data-label="送貨地址">${r.deliveryAddress || '-'}</td>
+	                            <td data-label="項目">${r.item || '-'}</td>
+	                            <td data-label="數量">${r.productQty || '-'}</td>
+	                            <td data-label="備註">${r.remark || '-'}</td>
+	                            <td data-label="送達狀態">
+	                                <button class="badge ${r.deliveryStatus === '已送達' ? 'badge-delivered' : 'badge-pending'}" 
+	                                    style="cursor:pointer; border:none; padding:4px 10px; border-radius:12px; font-size:11px;"
+	                                    onclick="toggleDeliveryStatus(${r.rowIndex}, '${r.deliveryStatus === '已送達' ? '待出貨' : '已送達'}')">
+	                                    ${r.deliveryStatus || '待出貨'}
+	                                </button>
+	                            </td>
+	                        </tr>`).join('')}
                     </tbody>
                 </table>
             </div>
@@ -2325,9 +2362,9 @@ function renderPrefixPage(container) {
                 <tbody id="prefix-list-body">
                     ${(configData.prefixes || []).map(p => `
                     <tr>
-                        <td style="font-weight:bold;">${p.prefix}</td>
-                        <td>${p.supplier}</td>
-                        <td>
+                        <td data-label="前綴" style="font-weight:bold;">${p.prefix}</td>
+                        <td data-label="供應商名稱">${p.supplier}</td>
+                        <td data-label="操作">
                             <button class="btn btn-danger btn-sm" onclick="deletePrefix(${p.rowIndex})">刪除</button>
                         </td>
                     </tr>`).join('')}
@@ -2704,9 +2741,9 @@ function renderConfigPage(container) {
                 <tbody id="config-list-body">
                     ${(configData.configPairs || []).map(p => `
                     <tr>
-                        <td style="font-weight:bold;">${p.supplier}</td>
-                        <td>${p.item}</td>
-                        <td>
+                        <td data-label="供應商" style="font-weight:bold;">${p.supplier}</td>
+                        <td data-label="項目名稱">${p.item}</td>
+                        <td data-label="操作">
                             <button class="btn btn-danger btn-sm" onclick="deleteConfigPair(${p.rowIndex})">刪除</button>
                         </td>
                     </tr>`).join('')}
@@ -2887,22 +2924,24 @@ function renderLedgerTable() {
             <tbody>
                 ${pageRecords.map(r => `
                 <tr>
-                    <td style="white-space:nowrap; font-size:12px;">${dateOnly(r.timestamp)}</td>
-                    <td>${r.supplier || '-'}</td>
-                    <td>${r.item || '-'}</td>
-                    <td style="font-weight:bold;">${r.orderNumber ? '#' + r.orderNumber : '-'}</td>
-                    <td>${r.customerName || '-'}</td>
-                    <td style="font-size:12px; white-space:pre-wrap;">${r.productQty || '-'}</td>
-                    <td style="white-space:nowrap;">${dateWithWeekday(r.deliveryDate)}</td>
-                    <td><span class="badge ${r.deliveryStatus === '已送達' ? 'badge-delivered' : 'badge-pending'}">${r.deliveryStatus || '待出貨'}</span></td>
-                    <td style="white-space:nowrap;">${monthOnly(r.reportMonth) || '<span style="color:#e74c3c; font-size:11px;">未設定</span>'}</td>
-                    <td>
+                    <td data-label="登記日期" style="white-space:nowrap; font-size:12px;">${dateOnly(r.timestamp)}</td>
+                    <td data-label="供應商">${r.supplier || '-'}</td>
+                    <td data-label="項目">${r.item || '-'}</td>
+                    <td data-label="訂單編號" style="font-weight:bold;">${r.orderNumber ? '#' + r.orderNumber : '-'}</td>
+                    <td data-label="客人">${r.customerName || '-'}</td>
+                    <td data-label="數量" style="font-size:12px; white-space:pre-wrap;">${r.productQty || '-'}</td>
+                    <td data-label="送貨日期" style="white-space:nowrap;">${dateWithWeekday(r.deliveryDate)}</td>
+                    <td data-label="送貨進度">
+                        <span class="badge ${r.deliveryStatus === '已送達' ? 'badge-delivered' : 'badge-pending'}">${r.deliveryStatus || '待出貨'}</span>
+                    </td>
+                    <td data-label="Report月份" style="white-space:nowrap;">${monthOnly(r.reportMonth) || '<span style="color:#e74c3c; font-size:11px;">未設定</span>'}</td>
+                    <td data-label="提交供應商">
                         <label class="toggle-switch">
                             <input type="checkbox" ${r.submitStatus === '已提交' ? 'checked' : ''} onchange="toggleSubmitStatus(${r.rowIndex}, this.checked)">
                             <span class="toggle-slider"></span>
                         </label>
                     </td>
-                    <td>
+                    <td data-label="操作">
                         <button class="btn btn-warning btn-sm" onclick="openLedgerEditModal(${r.rowIndex})">編輯</button>
                     </td>
                 </tr>`).join('')}
