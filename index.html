@@ -2081,12 +2081,20 @@ async function saveOutboundRemark(rowIndex) {
 // ============================================================
 function renderMonthlyPage(container) {
     const currentMonth = getCurrentMonth();
+    const isAdmin = currentUser && currentUser.role === 'Admin';
 
     container.innerHTML = `
         <div class="page-title">📅 訂單總匯(月份)</div>
         <div class="filter-bar">
             <label style="font-size:12px; align-self:center; font-weight:bold;">選擇月份：</label>
             <input type="month" id="monthly-month" value="${currentMonth}" onchange="renderMonthlyContent()">
+            ${isAdmin ? `
+            <label style="font-size:12px; align-self:center; font-weight:bold; margin-left:10px;">供應商：</label>
+            <select id="monthly-supplier-filter" onchange="renderMonthlyContent()">
+                <option value="">全部供應商</option>
+                ${configData.suppliers.map(s => `<option value="${s}">${s}</option>`).join('')}
+            </select>
+            ` : ''}
         </div>
         <div id="monthly-content"></div>
     `;
@@ -2095,7 +2103,13 @@ function renderMonthlyPage(container) {
 
 function renderMonthlyContent() {
     const filterMonth = document.getElementById('monthly-month')?.value || getCurrentMonth();
+    const supplierFilter = document.getElementById('monthly-supplier-filter')?.value || '';
     let records = getVisibleRecords();
+
+    // Filter by supplier if selected (Admin only)
+    if (supplierFilter) {
+        records = records.filter(r => r.supplier === supplierFilter);
+    }
 
     // Filter by selected month (based on delivery date)
     records = records.filter(r => {
