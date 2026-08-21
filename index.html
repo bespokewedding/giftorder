@@ -483,6 +483,7 @@ let recordsData = [];
 let teamData = [];
 let selectedUserEmail = null;
 let outboundViewMode = 'card';
+let outboundCurrentTab = 'pending';
 let outboundSortField = 'deliveryDate';
 let outboundSortOrder = 'asc';
 let ledgerSortField = 'timestamp';
@@ -805,7 +806,13 @@ async function loadInitialData() {
 async function loadRecords() {
     const result = await gasGet({ action: 'getRecords' });
     if (result.success) {
-        recordsData = result.records || [];
+        // Compatibility logic: If new submitStatus is empty, check legacy purchaseChannel
+        recordsData = (result.records || []).map(r => {
+            if (!r.submitStatus && r.purchaseChannel === '已提交') {
+                r.submitStatus = '已提交';
+            }
+            return r;
+        });
     }
 }
 
@@ -1044,13 +1051,28 @@ function updateInboundReportMonth() {
     const reportMonthInput = document.getElementById('inbound-report-month');
     if (!supplier || !reportMonthInput) return;
     
-    const rule = configData.reportRules[supplier] || '下單月份';
+    // Find rule with fuzzy matching for supplier name
+    let rule = '下單月份';
+    const targetSup = supplier.trim().toUpperCase().replace(/\s+/g, '');
+    for (const s in configData.reportRules) {
+        if (s.trim().toUpperCase().replace(/\s+/g, '') === targetSup) {
+            rule = configData.reportRules[s];
+            break;
+        }
+    }
+    
     let targetDate = new Date(); // Default to now (Order Month)
     
     if (rule === '送貨月份') {
         const deliveryDateStr = document.getElementById('inbound-date').value;
         if (deliveryDateStr) {
-            targetDate = parseDate(deliveryDateStr) || new Date(deliveryDateStr);
+            const parsed = parseDate(deliveryDateStr);
+            if (parsed && !isNaN(parsed.getTime())) {
+                targetDate = parsed;
+            } else {
+                const d = new Date(deliveryDateStr);
+                if (!isNaN(d.getTime())) targetDate = d;
+            }
         }
     }
     
@@ -1549,7 +1571,10 @@ function parseOrderText(text, fileName = '') {
     }
     if (customerName) document.getElementById('inbound-customer').value = customerName;
     if (phone) document.getElementById('inbound-phone').value = phone;
-    if (deliveryDate) document.getElementById('inbound-date').value = deliveryDate;
+    if (deliveryDate) {
+        document.getElementById('inbound-date').value = deliveryDate;
+        updateInboundReportMonth(); // Trigger calculation when date is recognized
+    }
     if (address) document.getElementById('inbound-address').value = address;
     if (remark) document.getElementById('inbound-remark').value = remark;
 
@@ -1602,10 +1627,10 @@ function renderOutboundPage(container) {
     container.innerHTML = `
         <div class="page-title">🎁 回禮出貨管理</div>
         <div class="filter-bar">
-            <select id="outbound-tab" onchange="renderOutboundList()">
-                <option value="pending">待出貨 (${undelivered.length})</option>
-                <option value="delivered">已送達 (${delivered.length})</option>
-                <option value="all">全部 (${records.length})</option>
+            <select id="outbound-tab" onchange="outboundCurrentTab=this.value; renderOutboundList()">
+                <option value="pending" ${outboundCurrentTab==='pending'?'selected':''}>待出貨 (${undelivered.length})</option>
+                <option value="delivered" ${outboundCurrentTab==='delivered'?'selected':''}>已送達 (${delivered.length})</option>
+                <option value="all" ${outboundCurrentTab==='all'?'selected':''}>全部 (${records.length})</option>
             </select>
             <input type="text" id="outbound-search" placeholder="搜尋客人姓名 / 單號 / 供應商..." oninput="renderOutboundList()">
             
