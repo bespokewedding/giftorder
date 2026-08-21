@@ -960,6 +960,13 @@ function renderInboundPage(container) {
                     <label>Report 月份</label>
                     <input type="month" id="inbound-report-month" value="${getCurrentMonth()}">
                 </div>
+                <div class="form-group" style="display:flex; align-items:center; gap:10px; padding-top:20px;">
+                    <label style="margin-bottom:0;">提交供應商</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="inbound-submit-status">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
             </div>
             <div style="margin-top:20px; text-align:right;">
                 <button class="btn btn-primary" onclick="submitInbound()">提交入庫</button>
@@ -1058,6 +1065,8 @@ async function submitInbound() {
     const remark = document.getElementById('inbound-remark').value.trim();
     const channel = document.getElementById('inbound-channel').value.trim();
     const reportMonth = document.getElementById('inbound-report-month').value;
+    const isSubmitted = document.getElementById('inbound-submit-status').checked;
+    const submitStatus = isSubmitted ? '已提交' : '';
 
     // Collect all items
     const itemSelects = document.querySelectorAll('.inbound-item-select');
@@ -1088,15 +1097,15 @@ async function submitInbound() {
     showLoading();
     try {
         const now = getNowStr();
-        // 欄位順序：A時間, B供應商, C項目, D產品及數量, E客人姓名, F聯絡電話, G訂單編號, H送貨日期, I送貨地址, Jremark, K送貨進度, L紀錄日期與時間, M購買渠道, Nreport月份
-        const values = [now, supplier, itemColumn, productQtyText, customer, phone, orderNumber, date, address, remark, '待出貨', '', channel, reportMonth];
+        // 欄位順序：A時間, B供應商, C項目, D產品及數量, E客人姓名, F聯絡電話, G訂單編號, H送貨日期, I送貨地址, Jremark, K送貨進度, L紀錄日期與時間, M購買渠道, Nreport月份, O提交供應商
+        const values = [now, supplier, itemColumn, productQtyText, customer, phone, orderNumber, date, address, remark, '待出貨', '', channel, reportMonth, submitStatus];
 
         // Write to Records sheet
         await gasPost({ action: 'append', sheet: 'Records', values: [values] });
 
         // Also write to each item-specific sheet (independent tab)
         for (const it of items) {
-            const itemValues = [now, supplier, it.name, `${it.name} x ${it.qty}`, customer, phone, orderNumber, date, address, remark, '待出貨', '', channel, reportMonth];
+            const itemValues = [now, supplier, it.name, `${it.name} x ${it.qty}`, customer, phone, orderNumber, date, address, remark, '待出貨', '', channel, reportMonth, submitStatus];
             await gasPost({ action: 'append', sheet: it.name, values: [itemValues] });
         }
 
@@ -1109,6 +1118,7 @@ async function submitInbound() {
         document.getElementById('inbound-address').value = '';
         document.getElementById('inbound-remark').value = '';
         document.getElementById('inbound-channel').selectedIndex = 0;
+        document.getElementById('inbound-submit-status').checked = false;
         // Reset PDF upload
         const pdfInput = document.getElementById('pdf-upload');
         if (pdfInput) pdfInput.value = '';
@@ -1233,11 +1243,12 @@ function parseOrderText(text) {
         const sortedPrefixes = [...configData.prefixes].sort((a, b) => b.prefix.length - a.prefix.length);
         
         for (const p of sortedPrefixes) {
-            // Pattern: Prefix followed by optional dash and digits/alphanumeric
-            const pat = new RegExp(`\\b(${p.prefix}[-\\s]?\\d+[-\\s]?\\d*)\\b`, 'i');
+            // Improved Pattern: Prefix followed by any combination of dashes, letters, and numbers
+            // This handles complex IDs like GBBM-BM-26-018
+            const pat = new RegExp(`\\b(${p.prefix}[-\\s][A-Z0-9-]{3,})\\b|\\b(${p.prefix}\\d{2,}[A-Z0-9-]*)\\b`, 'i');
             const m = text.match(pat);
             if (m) {
-                orderNumber = m[1];
+                orderNumber = (m[1] || m[2]).trim();
                 supplier = p.supplier;
                 break;
             }
@@ -1246,8 +1257,16 @@ function parseOrderText(text) {
     
     // Fallback if not found by prefix
     if (!orderNumber) {
-        const genericPat = /\b([A-Z]{2,4}[-\s]?\d+[-\\s]?\d*)\b/;
+        // Look for common Order # patterns: Letters-Letters-Numbers-Numbers etc.
+        const genericPat = /\b([A-Z]{2,6}[-\s][A-Z0-9-]{4,})\b/i;
         const m = text.match(genericPat);
+        if (m) orderNumber = m[1];
+    }
+    
+    // Final fallback for simple numeric IDs
+    if (!orderNumber) {
+        const simplePat = /\b([A-Z]{2,4}[-\s]?\d+[-\\s]?\d*)\b/;
+        const m = text.match(simplePat);
         if (m) orderNumber = m[1];
     }
     
@@ -2739,7 +2758,7 @@ function renderLedgerTable() {
                     <td style="white-space:nowrap;">${monthOnly(r.reportMonth) || '<span style="color:#e74c3c; font-size:11px;">未設定</span>'}</td>
                     <td>
                         <label class="toggle-switch">
-                            <input type="checkbox" ${r.purchaseChannel === '已提交' ? 'checked' : ''} onchange="toggleSubmitStatus(${r.rowIndex}, this.checked)">
+                            <input type="checkbox" ${r.submitStatus === '已提交' ? 'checked' : ''} onchange="toggleSubmitStatus(${r.rowIndex}, this.checked)">
                             <span class="toggle-slider"></span>
                         </label>
                     </td>
@@ -2775,10 +2794,10 @@ function setLedgerSort(field) {
 async function toggleSubmitStatus(rowIndex, checked) {
     try {
         const value = checked ? '已提交' : '';
-        // M欄(col 13): 購買渠道（用作提交供應商狀態）
-        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 13, value: value });
+        // O欄(col 15): 提交供應商狀態
+        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 15, value: value });
         const record = recordsData.find(r => r.rowIndex === rowIndex);
-        if (record) record.purchaseChannel = value;
+        if (record) record.submitStatus = value;
         showToast(checked ? '已標記為已提交' : '已取消提交標記');
     } catch (e) {
         showToast('更新失敗', 'error');
