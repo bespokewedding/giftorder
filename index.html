@@ -1879,11 +1879,25 @@ async function markDelivered(rowIndex) {
     }
 
     try {
-        // K欄(col 11): 送貨進度, L欄(col 12): 紀錄日期與時間
-        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 11, value: '已送達' });
-        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 12, value: nowStr });
+        const rowValues = [
+            recordsData[recordIndex].timestamp,
+            recordsData[recordIndex].supplier,
+            recordsData[recordIndex].item,
+            recordsData[recordIndex].productQty,
+            recordsData[recordIndex].customerName,
+            recordsData[recordIndex].phone || '',
+            recordsData[recordIndex].orderNumber,
+            recordsData[recordIndex].deliveryDate,
+            recordsData[recordIndex].deliveryAddress || '',
+            recordsData[recordIndex].remark,
+            '已送達',
+            nowStr,
+            recordsData[recordIndex].purchaseChannel || '',
+            recordsData[recordIndex].reportMonth,
+            recordsData[recordIndex].submitStatus || ''
+        ];
+        await gasPost({ action: 'updateRow', sheet: 'Records', row: rowIndex, values: rowValues });
         showToast('✓ 已成功送達');
-        // No need to reload everything unless needed for other pages
     } catch (e) {
         showToast('同步失敗，請刷新頁面', 'error');
         await loadRecords();
@@ -1892,24 +1906,45 @@ async function markDelivered(rowIndex) {
 }
 
 async function toggleDeliveryStatus(rowIndex, newStatus) {
-    showLoading();
+    const record = recordsData.find(r => r.rowIndex === rowIndex);
+    if (!record) return;
+
+    const oldStatus = record.deliveryStatus;
+    const oldTime = record.recordDateTime;
+    const now = getNowStr();
+
+    // Optimistic Update
+    record.deliveryStatus = newStatus;
+    record.recordDateTime = (newStatus === '已送達') ? now : '';
+    renderCurrentPage();
+    showToast('正在更新狀態...', 'info');
+
     try {
-        const now = getNowStr();
-        // K欄(col 11): 送貨進度
-        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 11, value: newStatus });
-        // L欄(col 12): 紀錄日期與時間
-        if (newStatus === '已送達') {
-            await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 12, value: now });
-        } else {
-            await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 12, value: '' });
-        }
-        await loadRecords();
-        renderCurrentPage();
-        showToast(newStatus === '已送達' ? '已標記為送達！' : '已改回待出貨');
+        const rowValues = [
+            record.timestamp,
+            record.supplier,
+            record.item,
+            record.productQty,
+            record.customerName,
+            record.phone || '',
+            record.orderNumber,
+            record.deliveryDate,
+            record.deliveryAddress || '',
+            record.remark,
+            record.deliveryStatus,
+            record.recordDateTime,
+            record.purchaseChannel || '',
+            record.reportMonth,
+            record.submitStatus || ''
+        ];
+        await gasPost({ action: 'updateRow', sheet: 'Records', row: rowIndex, values: rowValues });
+        showToast(newStatus === '已送達' ? '✓ 已標記為送達！' : '已改回待出貨');
     } catch (e) {
-        showToast('更新失敗', 'error');
+        record.deliveryStatus = oldStatus;
+        record.recordDateTime = oldTime;
+        renderCurrentPage();
+        showToast('更新失敗，請重試', 'error');
     }
-    hideLoading();
 }
 
 function openOutboundRemarkModal(rowIndex) {
@@ -3050,25 +3085,54 @@ async function saveLedgerEdit(rowIndex) {
     const month = document.getElementById('ledger-edit-month').value;
     const remark = document.getElementById('ledger-edit-remark').value.trim();
 
-    showLoading();
+    // Find the record in local state
+    const record = recordsData.find(r => r.rowIndex === rowIndex);
+    if (!record) return;
+
+    // Optimistic UI Update
+    const oldValues = { ...record };
+    record.supplier = supplier;
+    record.item = item;
+    record.productQty = qty;
+    record.customerName = customer;
+    record.orderNumber = orderNumber;
+    record.deliveryDate = date;
+    record.remark = remark;
+    record.reportMonth = month;
+
+    closeModal();
+    renderCurrentPage();
+    showToast('正在儲存變更...', 'info');
+
     try {
-        // B(2):供應商, C(3):項目, D(4):產品及數量, E(5):客人, F(6):電話, G(7):訂單編號, H(8):送貨日期, J(10):remark, N(14):report月份
-        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 2, value: supplier });
-        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 3, value: item });
-        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 4, value: qty });
-        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 5, value: customer });
-        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 7, value: orderNumber });
-        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 8, value: date });
-        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 10, value: remark });
-        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 14, value: month });
-        await loadRecords();
-        closeModal();
-        renderCurrentPage();
-        showToast('記錄已更新！');
+        // Construct full row for updateRow (15 columns)
+        // A:時間, B:供應商, C:項目, D:產品及數量, E:客人, F:電話, G:單號, H:日期, I:地址, J:remark, K:進度, L:登記時間, M:渠道, N:月份, O:狀態
+        const rowValues = [
+            record.timestamp,
+            record.supplier,
+            record.item,
+            record.productQty,
+            record.customerName,
+            record.phone || '',
+            record.orderNumber,
+            record.deliveryDate,
+            record.deliveryAddress || '',
+            record.remark,
+            record.deliveryStatus || '待出貨',
+            record.recordDateTime || '',
+            record.purchaseChannel || '',
+            record.reportMonth,
+            record.submitStatus || ''
+        ];
+        
+        await gasPost({ action: 'updateRow', sheet: 'Records', row: rowIndex, values: rowValues });
+        showToast('記錄已成功儲存！');
     } catch (e) {
-        showToast('更新失敗', 'error');
+        // Rollback on error
+        Object.assign(record, oldValues);
+        renderCurrentPage();
+        showToast('儲存失敗，請重試', 'error');
     }
-    hideLoading();
 }
 
 async function deleteLedgerRecord(rowIndex) {
@@ -3076,12 +3140,22 @@ async function deleteLedgerRecord(rowIndex) {
     showLoading();
     try {
         await gasPost({ action: 'deleteRow', sheet: 'Records', row: rowIndex });
-        await loadRecords();
+        
+        // Optimistic delete from local state
+        const idx = recordsData.findIndex(r => r.rowIndex === rowIndex);
+        if (idx !== -1) {
+            recordsData.splice(idx, 1);
+            // Adjust subsequent row indices because GAS deleteRow shifts rows up
+            recordsData.forEach(r => {
+                if (r.rowIndex > rowIndex) r.rowIndex--;
+            });
+        }
+        
         closeModal();
         renderCurrentPage();
         showToast('記錄已刪除');
     } catch (e) {
-        showToast('刪除失敗', 'error');
+        showToast('刪除失敗，請重新整理頁面再試', 'error');
     }
     hideLoading();
 }
