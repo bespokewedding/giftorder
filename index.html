@@ -1656,10 +1656,33 @@ function parseOrderText(text, fileName = '') {
     }
     console.log('Phone:', phone);
 
-    // Extract remark
-    const remarkMatch = text.match(/訂單送貨備註[\s：:]+(.+?)(?=\s*BESPOKE|$)/);
-    let remark = remarkMatch ? remarkMatch[1].trim() : '';
-    if (remark === '灣仔' || remark.length > 100) remark = ''; // cleanup false matches
+    // Extract remark (Improved to support multiple labels and multi-line content)
+    let remark = '';
+    const remarkLabels = ['訂單送貨備註', 'Remarks', 'Remark', '備註'];
+    
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        for (const label of remarkLabels) {
+            if (line.includes(label)) {
+                // Try to get content on the same line
+                const sameLine = line.split(/[：:]/).slice(1).join(':').trim();
+                if (sameLine) {
+                    remark = sameLine;
+                } else if (i + 1 < lines.length) {
+                    // Try to get content from the next line if current is empty
+                    const nextLine = lines[i + 1].trim();
+                    // Don't grab next line if it looks like another label
+                    if (!nextLine.includes(':') && !nextLine.match(/^(客人資料|送貨|收件人)/)) {
+                        remark = nextLine;
+                    }
+                }
+                break;
+            }
+        }
+        if (remark) break;
+    }
+    
+    if (remark.length > 200) remark = ''; // cleanup false matches if too long
 
     // Fill form fields
     if (supplier) {
