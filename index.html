@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Bespoke回禮訂單管理系統</title>
+    <title>訂單管理系統</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         :root {
             --primary: #2c3e50;
@@ -129,6 +130,7 @@
         .login-box .btn-login:hover { background: #2980b9; }
         .login-box .btn-login:disabled { background: #bdc3c7; cursor: not-allowed; }
         .login-error { color: var(--danger); font-size: 13px; margin-top: 10px; display: none; }
+        .warning-text { color: var(--danger); font-size: 11px; margin-top: 4px; display: none; font-weight: bold; }
 
         /* Common */
         .page-title { font-size: 20px; font-weight: bold; color: var(--primary); margin-bottom: 20px; }
@@ -371,8 +373,25 @@
         .toast-info { background: var(--accent); }
         @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
+        /* Team Page Layout */
+        .team-container { display: grid; grid-template-columns: 250px 1fr; gap: 20px; }
+        .user-list { background: var(--white); border-radius: 10px; padding: 15px; border: 1px solid var(--border); }
+        .user-detail { background: var(--white); border-radius: 10px; padding: 25px; border: 1px solid var(--border); min-height: 400px; }
+        .user-card { 
+            padding: 15px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; cursor: pointer;
+            transition: all 0.2s; position: relative;
+        }
+        .user-card:hover { border-color: var(--accent); background: #f8fbff; }
+        .user-card.active { border-color: var(--accent); background: #f0f7ff; border-width: 2px; }
+        .user-card .u-name { font-weight: bold; font-size: 15px; color: var(--primary); }
+        .user-card .u-role { font-size: 11px; color: #7f8c8d; margin-top: 4px; display: flex; align-items: center; gap: 5px; }
+        .u-badge { background: #e0e0e0; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+        .u-badge.admin { background: #ffeaa7; color: #d68910; }
+        .u-badge.supplier { background: #d5f5e3; color: #27ae60; }
+
         /* Responsive */
         @media (max-width: 768px) {
+            .team-container { grid-template-columns: 1fr; }
             .sidebar { display: none; }
             .app-layout { flex-direction: column; }
             .main-content { max-height: none; padding: 15px; }
@@ -459,8 +478,13 @@ const CONFIG = {
 // STATE
 // ============================================================
 let currentUser = null;
-let configData = { suppliers: [], items: [], supplierItems: {} };
+let configData = { suppliers: [], items: [], supplierItems: {}, configPairs: [], prefixes: [] };
 let recordsData = [];
+let teamData = [];
+let selectedUserEmail = null;
+let outboundViewMode = 'card';
+let outboundSortField = 'deliveryDate';
+let outboundSortOrder = 'asc';
 let currentPage = 'outbound';
 
 // ============================================================
@@ -485,21 +509,44 @@ function getNowStr() {
 function parseDate(str) {
     if (!str) return null;
     str = str.toString().trim();
-    // Try Chinese format: YYYY年M月D日
-    const cnMatch = str.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
-    if (cnMatch) return new Date(parseInt(cnMatch[1]), parseInt(cnMatch[2]) - 1, parseInt(cnMatch[3]));
-    // Try ISO date format (YYYY-MM-DD) at start of string
-    const isoMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-    if (isoMatch) return new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]));
-    // Try full Date string like 'Sun May 31 2026 00:00:00 GMT+0800...'
-    const fullMatch = str.match(/^[A-Za-z]{3}\s+([A-Za-z]{3})\s+(\d{1,2})\s+(\d{4})/);
-    if (fullMatch) {
-        const months = {Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
-        return new Date(parseInt(fullMatch[3]), months[fullMatch[1]] || 0, parseInt(fullMatch[2]));
-    }
-    // Fallback: try native Date parsing
+    
+    // Try native Date parsing first, as it handles most standard formats including ISO with time
+    // But be careful with Chinese formats or non-standard ones
     const d = new Date(str);
     if (!isNaN(d.getTime())) return d;
+
+    // Try Chinese format: YYYY年M月D日 (possibly with time)
+    const cnMatch = str.match(/(\d{4})年(\d{1,2})月(\d{1,2})日(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+    if (cnMatch) {
+        return new Date(
+            parseInt(cnMatch[1]), 
+            parseInt(cnMatch[2]) - 1, 
+            parseInt(cnMatch[3]),
+            parseInt(cnMatch[4] || 0),
+            parseInt(cnMatch[5] || 0),
+            parseInt(cnMatch[6] || 0)
+        );
+    }
+
+    // Try ISO-like date format (YYYY-MM-DD) possibly with time
+    const isoMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:\s+|T)(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
+    if (isoMatch) {
+        return new Date(
+            parseInt(isoMatch[1]), 
+            parseInt(isoMatch[2]) - 1, 
+            parseInt(isoMatch[3]),
+            parseInt(isoMatch[4] || 0),
+            parseInt(isoMatch[5] || 0),
+            parseInt(isoMatch[6] || 0)
+        );
+    }
+    
+    // Simple YYYY-MM-DD without time
+    const isoSimpleMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (isoSimpleMatch) {
+        return new Date(parseInt(isoSimpleMatch[1]), parseInt(isoSimpleMatch[2]) - 1, parseInt(isoSimpleMatch[3]));
+    }
+
     return null;
 }
 
@@ -510,6 +557,47 @@ function dateOnly(str) {
     const d = parseDate(str);
     if (!d) return str;
     return `${d.getFullYear()}年${pad2(d.getMonth()+1)}月${pad2(d.getDate())}日`;
+}
+
+function dateTimeFull(str) {
+    if (!str) return '-';
+    const d = parseDate(str);
+    if (!d) return str;
+    const year = d.getFullYear();
+    const month = pad2(d.getMonth() + 1);
+    const date = pad2(d.getDate());
+    let hours = d.getHours();
+    const minutes = pad2(d.getMinutes());
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12; // the hour '0' should be '12'
+    return `${year}年${month}月${date}日 ${hours}:${minutes}${ampm}`;
+}
+
+function checkDuplicateOrderNumber() {
+    const input = document.getElementById('inbound-order-number');
+    const warning = document.getElementById('order-number-warning');
+    if (!input || !warning) return false;
+    
+    const val = input.value.trim();
+    if (!val) {
+        warning.style.display = 'none';
+        return false;
+    }
+    
+    // Check in recordsData
+    const duplicate = recordsData.find(r => r.orderNumber && r.orderNumber.toString().trim().toUpperCase() === val.toUpperCase());
+    
+    if (duplicate) {
+        warning.innerHTML = `⚠️ 此編號已存在 (登記日期: ${dateOnly(duplicate.timestamp)}, 客人: ${duplicate.customerName})`;
+        warning.style.display = 'block';
+        input.style.borderColor = 'var(--danger)';
+        return true;
+    } else {
+        warning.style.display = 'none';
+        input.style.borderColor = 'var(--border)';
+        return false;
+    }
 }
 
 function dateWithWeekday(str) {
@@ -636,8 +724,23 @@ async function loadInitialData() {
             configData.suppliers = configResult.suppliers || [];
             configData.items = configResult.items || [];
             configData.supplierItems = configResult.supplierItems || {};
+            configData.configPairs = configResult.configPairs || [];
+            configData.prefixes = configResult.prefixes || [];
+            configData.reportRules = configResult.reportRules || {};
         }
-        renderCurrentPage(); // Re-render with config data
+        
+        // Load team data if Admin
+        if (isAdmin()) {
+            const teamResult = await gasGet({ action: 'getUsers' });
+            if (teamResult.success) {
+                teamData = teamResult.users || [];
+            }
+        } else {
+            // For suppliers, teamData only contains themselves
+            teamData = [currentUser];
+        }
+
+        renderCurrentPage(); // Re-render with config/team data
         
         // Load records (may be slow with large data)
         await loadRecords();
@@ -686,7 +789,10 @@ function buildNavigation() {
         { id: 'monthly', label: '📅 訂單總匯(月份)', adminOnly: false },
         { id: 'status', label: '📊 訂單近況', adminOnly: true },
         { id: 'edit', label: '✏️ 更改訂單', adminOnly: true },
-        { id: 'ledger', label: '📒 流水帳管理', adminOnly: true }
+        { id: 'ledger', label: '📒 流水帳管理', adminOnly: true },
+        { id: 'prefix', label: '🏷️ 前綴管理', adminOnly: true },
+        { id: 'config', label: '⚙️ 系統配置', adminOnly: true },
+        { id: 'team', label: '👤 團隊帳號', adminOnly: false }
     ];
 
     const sidebar = document.getElementById('sidebarNav');
@@ -730,6 +836,9 @@ function renderCurrentPage() {
         case 'status': renderStatusPage(content); break;
         case 'edit': renderEditPage(content); break;
         case 'ledger': renderLedgerPage(content); break;
+        case 'prefix': renderPrefixPage(content); break;
+        case 'config': renderConfigPage(content); break;
+        case 'team': renderTeamPage(content); break;
     }
 }
 
@@ -743,18 +852,21 @@ function renderInboundPage(container) {
     container.innerHTML = `
         <div class="page-title">📥 訂單登記</div>
         
-        <!-- PDF 自動識別區域 -->
+        <!-- PDF/Excel 自動識別區域 -->
         <div class="card" style="margin-bottom:15px; border:2px dashed var(--accent); background:#f0f8ff;">
             <div style="display:flex; align-items:center; gap:12px; margin-bottom:10px;">
                 <span style="font-size:20px;">📄</span>
                 <div>
-                    <div style="font-weight:bold; color:var(--primary);">PDF 訂單自動識別</div>
-                    <div style="font-size:12px; color:#7f8c8d;">上傳訂單 PDF，系統會自動識別並填入資料，請核實後確認入庫</div>
+                    <div style="font-weight:bold; color:var(--primary);">PDF / Excel 訂單自動識別</div>
+                    <div style="font-size:12px; color:#7f8c8d;">上傳訂單 PDF 或 Excel (.xlsx)，系統會自動識別並填入資料</div>
                 </div>
             </div>
-            <div style="display:flex; gap:10px; align-items:center;">
-                <input type="file" id="pdf-upload" accept=".pdf" onchange="handlePdfUpload(event)" style="flex:1; font-size:13px;">
-                <span id="pdf-status" style="font-size:12px; color:#7f8c8d;"></span>
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                <div style="flex:1; min-width:200px;">
+                    <label style="font-size:11px; color:#7f8c8d; display:block; margin-bottom:2px;">上傳 PDF 或 Excel 檔案：</label>
+                    <input type="file" id="pdf-upload" accept=".pdf,.xlsx" onchange="handleFileUpload(event)" style="width:100%; font-size:13px;">
+                </div>
+                <span id="pdf-status" style="font-size:12px; color:#7f8c8d; padding-top:15px;"></span>
             </div>
         </div>
 
@@ -769,7 +881,8 @@ function renderInboundPage(container) {
                 </div>
                 <div class="form-group">
                     <label>訂單編號 *</label>
-                    <input type="text" id="inbound-order-number" placeholder="輸入訂單編號">
+                    <input type="text" id="inbound-order-number" placeholder="輸入訂單編號" oninput="checkDuplicateOrderNumber()">
+                    <div id="order-number-warning" class="warning-text"></div>
                 </div>
             </div>
             <div class="form-row">
@@ -785,7 +898,7 @@ function renderInboundPage(container) {
             <div class="form-row">
                 <div class="form-group">
                     <label>送貨日期 *</label>
-                    <input type="date" id="inbound-date">
+                    <input type="date" id="inbound-date" onchange="updateInboundReportMonth()">
                 </div>
                 <div class="form-group">
                     <label>送貨地址 *</label>
@@ -864,6 +977,29 @@ function onSupplierChange() {
     selects.forEach(sel => {
         sel.innerHTML = getItemOptionsForSupplier(supplier);
     });
+    
+    // Auto-calculate Report Month based on supplier rule
+    updateInboundReportMonth();
+}
+
+function updateInboundReportMonth() {
+    const supplier = document.getElementById('inbound-supplier').value;
+    const reportMonthInput = document.getElementById('inbound-report-month');
+    if (!supplier || !reportMonthInput) return;
+    
+    const rule = configData.reportRules[supplier] || '下單月份';
+    let targetDate = new Date(); // Default to now (Order Month)
+    
+    if (rule === '送貨月份') {
+        const deliveryDateStr = document.getElementById('inbound-date').value;
+        if (deliveryDateStr) {
+            targetDate = parseDate(deliveryDateStr) || new Date(deliveryDateStr);
+        }
+    }
+    
+    const year = targetDate.getFullYear();
+    const month = String(targetDate.getMonth() + 1).padStart(2, '0');
+    reportMonthInput.value = `${year}-${month}`;
 }
 
 function addInboundItem() {
@@ -907,6 +1043,12 @@ async function submitInbound() {
     const customer = document.getElementById('inbound-customer').value.trim();
     const phone = document.getElementById('inbound-phone').value.trim();
     const orderNumber = document.getElementById('inbound-order-number').value.trim();
+
+    if (checkDuplicateOrderNumber()) {
+        if (!confirm('警告：此訂單編號已存在於系統中。是否仍要重複登記？')) {
+            return;
+        }
+    }
     const date = document.getElementById('inbound-date').value;
     const address = document.getElementById('inbound-address').value.trim();
     const remark = document.getElementById('inbound-remark').value.trim();
@@ -1000,89 +1142,124 @@ async function submitInbound() {
 }
 
 // ============================================================
-// PDF 自動識別
+// PDF / Excel 自動識別
 // ============================================================
-async function handlePdfUpload(event) {
+async function handleFileUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
     const statusEl = document.getElementById('pdf-status');
     statusEl.textContent = '識別中...';
     statusEl.style.color = 'var(--accent)';
 
+    const fileName = file.name.toLowerCase();
+    
     try {
-        const arrayBuffer = await file.arrayBuffer();
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-        let fullText = '';
-        for (let i = 1; i <= pdf.numPages; i++) {
-            const page = await pdf.getPage(i);
-            const textContent = await page.getTextContent();
-            // Group items by Y position to reconstruct lines
-            const items = textContent.items;
-            const lines = {};
-            items.forEach(item => {
-                const y = Math.round(item.transform[5]); // Y position
-                if (!lines[y]) lines[y] = [];
-                lines[y].push({ x: item.transform[4], str: item.str });
-            });
-            // Sort lines by Y (descending = top to bottom)
-            const sortedYs = Object.keys(lines).sort((a, b) => b - a);
-            sortedYs.forEach(y => {
-                // Sort items in each line by X position
-                lines[y].sort((a, b) => a.x - b.x);
-                fullText += lines[y].map(item => item.str).join(' ') + '\n';
-            });
+        if (fileName.endsWith('.pdf')) {
+            await processPdf(file, statusEl);
+        } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+            await processExcel(file, statusEl);
+        } else {
+            statusEl.textContent = '✗ 不支援的檔案格式';
+            statusEl.style.color = 'var(--danger)';
         }
-        console.log('PDF extracted text:', fullText);
-        parsePdfText(fullText);
-        statusEl.textContent = '✓ 識別完成，請核實資料';
-        statusEl.style.color = 'var(--success)';
     } catch (e) {
-        console.error('PDF parse error:', e);
+        console.error('File parse error:', e);
         statusEl.textContent = '✗ 識別失敗，請手動填寫';
         statusEl.style.color = 'var(--danger)';
     }
 }
 
-function parsePdfText(text) {
-    console.log('Parsing PDF text...');
+async function processPdf(file, statusEl) {
+    const arrayBuffer = await file.arrayBuffer();
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let fullText = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const items = textContent.items;
+        const lines = {};
+        items.forEach(item => {
+            const y = Math.round(item.transform[5]);
+            if (!lines[y]) lines[y] = [];
+            lines[y].push({ x: item.transform[4], str: item.str });
+        });
+        const sortedYs = Object.keys(lines).sort((a, b) => b - a);
+        sortedYs.forEach(y => {
+            lines[y].sort((a, b) => a.x - b.x);
+            fullText += lines[y].map(item => item.str).join(' ') + '\n';
+        });
+    }
+    console.log('PDF extracted text:', fullText);
+    parseOrderText(fullText);
+    statusEl.textContent = '✓ PDF 識別完成';
+    statusEl.style.color = 'var(--success)';
+}
+
+async function processExcel(file, statusEl) {
+    const arrayBuffer = await file.arrayBuffer();
+    const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+    let fullText = '';
+    
+    workbook.SheetNames.forEach(sheetName => {
+        const worksheet = workbook.Sheets[sheetName];
+        // Convert to CSV-like text or just join all cells
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+        jsonData.forEach(row => {
+            fullText += row.map(cell => cell === null || cell === undefined ? '' : cell).join(' ') + '\n';
+        });
+    });
+    
+    console.log('Excel extracted text:', fullText);
+    parseOrderText(fullText);
+    statusEl.textContent = '✓ Excel 識別完成';
+    statusEl.style.color = 'var(--success)';
+}
+
+function parseOrderText(text) {
+    console.log('Parsing order text...');
     const lines = text.split('\n').map(l => l.trim()).filter(l => l);
     
-    // Extract Order # - look for pattern like SA-26-067, AB-24-001, GD18022513 etc.
+    // Extract Order # - based on configurable prefixes
     let orderNumber = '';
-    const orderPatterns = [
-        /\b(SA-\d+-\d+)\b/,
-        /\b(AB-\d+-\d+)\b/,
-        /\b(GD\d+)\b/,
-        /\b(GD-?\d+-?\d*)\b/,
-        /\b(WL-\d+-\d+)\b/,
-        /\b(KW-\d+-\d+)\b/,
-        /\b(LMG-\d+-\d+)\b/,
-        /\b(LMDC[_\-]\S+)\b/,
-        /\b(GBBM-\d+-\d+)\b/,
-        /\b(TG\d+)\b/
-    ];
-    for (const pat of orderPatterns) {
-        const m = text.match(pat);
-        if (m) { orderNumber = m[1]; break; }
+    let supplier = '';
+    
+    if (configData.prefixes && configData.prefixes.length > 0) {
+        // Sort prefixes by length descending to match longest first (e.g., GBBM before GB)
+        const sortedPrefixes = [...configData.prefixes].sort((a, b) => b.prefix.length - a.prefix.length);
+        
+        for (const p of sortedPrefixes) {
+            // Pattern: Prefix followed by optional dash and digits/alphanumeric
+            const pat = new RegExp(`\\b(${p.prefix}[-\\s]?\\d+[-\\s]?\\d*)\\b`, 'i');
+            const m = text.match(pat);
+            if (m) {
+                orderNumber = m[1];
+                supplier = p.supplier;
+                break;
+            }
+        }
     }
-    console.log('Order #:', orderNumber);
+    
+    // Fallback if not found by prefix
+    if (!orderNumber) {
+        const genericPat = /\b([A-Z]{2,4}[-\s]?\d+[-\\s]?\d*)\b/;
+        const m = text.match(genericPat);
+        if (m) orderNumber = m[1];
+    }
+    
+    console.log('Order #:', orderNumber, 'Supplier:', supplier);
 
-    // Extract customer name - find line with "姓名" label
-    // In this PDF, name appears on the line BEFORE "姓名 ：" OR on same line
+    // Extract customer name
     let customerName = '';
     for (let i = 0; i < lines.length; i++) {
         if (/姓名\s*[：:]/.test(lines[i])) {
-            // Check if name is on same line after the label
             const sameLine = lines[i].match(/姓名\s*[：:]\s*(.+)/);
             if (sameLine && sameLine[1].trim() && !/\d{8}/.test(sameLine[1])) {
                 customerName = sameLine[1].trim();
             } else {
-                // Name might be on the PREVIOUS line (pdf.js Y-sort quirk)
                 if (i > 0 && lines[i-1] && !/[：:]|\d{8}|客人資料|預訂|產品/.test(lines[i-1])) {
                     customerName = lines[i-1].trim();
                 }
-                // Or NEXT line
                 if (!customerName && i + 1 < lines.length && !/[：:]|\d{8}|聯絡/.test(lines[i+1])) {
                     customerName = lines[i+1].trim();
                 }
@@ -1090,7 +1267,6 @@ function parsePdfText(text) {
             break;
         }
     }
-    // Also try 收件人 field
     if (!customerName) {
         const recipientMatch = text.match(/收件人\s*[：:]\s*(.+)/m);
         if (recipientMatch) customerName = recipientMatch[1].trim();
@@ -1105,7 +1281,6 @@ function parsePdfText(text) {
         if (/^\d{6,}$/.test(address)) address = '';
     }
     if (!address) {
-        // Look for HK address pattern in lines
         for (const line of lines) {
             if (line.length > 8 && /[一-鿿]/.test(line) && (/室|樓|號|街|道|座/.test(line) || /\d+[號樓座]/.test(line))) {
                 if (!/BESPOKE|PRODUCTION|LTD|Tel:|Email:|Website:|送貨地址|產品|數量/.test(line)) {
@@ -1117,14 +1292,30 @@ function parsePdfText(text) {
     }
     console.log('Address:', address);
 
-    // Extract delivery date - handle "2026 年 7 月 30 日" with spaces
+    // Extract delivery date - handle multiple formats
     let deliveryDate = '';
-    const dateMatch = text.match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
-    if (dateMatch) {
-        deliveryDate = `${dateMatch[1]}-${String(dateMatch[2]).padStart(2,'0')}-${String(dateMatch[3]).padStart(2,'0')}`;
+    // Format 1: 2026 年 7 月 30 日
+    const dateMatch1 = text.match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
+    if (dateMatch1) {
+        deliveryDate = `${dateMatch1[1]}-${String(dateMatch1[2]).padStart(2,'0')}-${String(dateMatch1[3]).padStart(2,'0')}`;
     }
+    // Format 2: 2026-07-30
     if (!deliveryDate) {
-        const engDate = text.match(/(?:Order\s*Date|Date)\s*[：:]\s*([A-Za-z]+\s+\d{1,2},?\s+\d{4})/);
+        const dateMatch2 = text.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+        if (dateMatch2) {
+            deliveryDate = `${dateMatch2[1]}-${String(dateMatch2[2]).padStart(2,'0')}-${String(dateMatch2[3]).padStart(2,'0')}`;
+        }
+    }
+    // Format 3: 30/07/2026
+    if (!deliveryDate) {
+        const dateMatch3 = text.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+        if (dateMatch3) {
+            deliveryDate = `${dateMatch3[3]}-${String(dateMatch3[2]).padStart(2,'0')}-${String(dateMatch3[1]).padStart(2,'0')}`;
+        }
+    }
+    // Format 4: English Date
+    if (!deliveryDate) {
+        const engDate = text.match(/(?:Order\s*Date|Date|Delivery\s*Date)\s*[：:]\s*([A-Za-z]+\s+\d{1,2},?\s+\d{4})/i);
         if (engDate) {
             const d = new Date(engDate[1]);
             if (!isNaN(d.getTime())) deliveryDate = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -1132,26 +1323,8 @@ function parsePdfText(text) {
     }
     console.log('Delivery Date:', deliveryDate);
 
-    // Extract supplier from order number prefix or product names
-    let supplier = '';
-    if (orderNumber) {
-        // Try to match supplier from order number prefix
-        const prefix = orderNumber.split('-')[0];
-        const supplierMap = {
-            'SA': 'Saicho',
-            'AB': 'agn\u00e8s b.',
-            'GD': 'Godiva',
-            'WL': '永樂粉麵廠',
-            'KW': '奇華餅家',
-            'LMG': 'Lady M',
-            'LMDC': 'La Maison Du Chocolat',
-            'GBBM': 'Gets Bro - Bonne Maman',
-            'TG': '糕點時光'
-        };
-        supplier = supplierMap[prefix] || '';
-    }
+    // Fallback supplier from product names if not found by prefix
     if (!supplier) {
-        // Try to find supplier from product names
         for (const s of configData.suppliers) {
             if (text.includes(s)) { supplier = s; break; }
         }
@@ -1230,7 +1403,10 @@ function parsePdfText(text) {
             }
         }
     }
-    if (orderNumber) document.getElementById('inbound-order-number').value = orderNumber;
+    if (orderNumber) {
+        document.getElementById('inbound-order-number').value = orderNumber;
+        checkDuplicateOrderNumber();
+    }
     if (customerName) document.getElementById('inbound-customer').value = customerName;
     if (phone) document.getElementById('inbound-phone').value = phone;
     if (deliveryDate) document.getElementById('inbound-date').value = deliveryDate;
@@ -1293,7 +1469,25 @@ function renderOutboundPage(container) {
                 <option value="delivered">已送達 (${delivered.length})</option>
                 <option value="all">全部 (${records.length})</option>
             </select>
-            <input type="text" id="outbound-search" placeholder="搜尋客人姓名 / 訂單編號 / 供應商..." oninput="renderOutboundList()">
+            <input type="text" id="outbound-search" placeholder="搜尋客人姓名 / 單號 / 供應商..." oninput="renderOutboundList()">
+            
+            <div style="display:flex; gap:5px;">
+                <select id="outbound-sort-field" onchange="outboundSortField=this.value; renderOutboundList()">
+                    <option value="deliveryDate" ${outboundSortField==='deliveryDate'?'selected':''}>按送貨日期</option>
+                    <option value="orderNumber" ${outboundSortField==='orderNumber'?'selected':''}>按訂單編號</option>
+                    <option value="customerName" ${outboundSortField==='customerName'?'selected':''}>按客人姓名</option>
+                    <option value="item" ${outboundSortField==='item'?'selected':''}>按項目名稱</option>
+                </select>
+                <select id="outbound-sort-order" onchange="outboundSortOrder=this.value; renderOutboundList()">
+                    <option value="asc" ${outboundSortOrder==='asc'?'selected':''}>A → Z (舊到新)</option>
+                    <option value="desc" ${outboundSortOrder==='desc'?'selected':''}>Z → A (新到舊)</option>
+                </select>
+            </div>
+
+            <div style="display:flex; background:white; border-radius:6px; padding:2px; border:1px solid var(--border);">
+                <button class="btn btn-sm ${outboundViewMode==='card'?'btn-primary':''}" style="padding:4px 10px; border-radius:4px; ${outboundViewMode==='card'?'':'background:none; color:var(--text);'}" onclick="outboundViewMode='card'; renderOutboundPage(document.getElementById('mainContent'))">🎴 卡片</button>
+                <button class="btn btn-sm ${outboundViewMode==='list'?'btn-primary':''}" style="padding:4px 10px; border-radius:4px; ${outboundViewMode==='list'?'':'background:none; color:var(--text);'}" onclick="outboundViewMode='list'; renderOutboundPage(document.getElementById('mainContent'))">📋 清單</button>
+            </div>
         </div>
         <div id="outbound-list"></div>
     `;
@@ -1305,16 +1499,14 @@ function renderOutboundList() {
     const search = (document.getElementById('outbound-search').value || '').toLowerCase();
     let records = getVisibleRecords();
 
+    // Filter by tab
     if (tab === 'pending') {
         records = records.filter(r => r.deliveryStatus !== '已送達');
-        records.sort((a, b) => new Date(a.deliveryDate || '9999-12-31') - new Date(b.deliveryDate || '9999-12-31'));
     } else if (tab === 'delivered') {
         records = records.filter(r => r.deliveryStatus === '已送達');
-        records.sort((a, b) => new Date(b.deliveryDate || '0000-01-01') - new Date(a.deliveryDate || '0000-01-01'));
-    } else {
-        records.sort((a, b) => new Date(a.deliveryDate || '9999-12-31') - new Date(b.deliveryDate || '9999-12-31'));
     }
 
+    // Search filter
     if (search) {
         records = records.filter(r =>
             r.customerName.toLowerCase().includes(search) ||
@@ -1324,18 +1516,56 @@ function renderOutboundList() {
         );
     }
 
+    // Dynamic Sorting
+    records.sort((a, b) => {
+        let valA, valB;
+        switch (outboundSortField) {
+            case 'deliveryDate':
+                valA = a.deliveryDate || (outboundSortOrder === 'asc' ? '9999-12-31' : '0000-01-01');
+                valB = b.deliveryDate || (outboundSortOrder === 'asc' ? '9999-12-31' : '0000-01-01');
+                break;
+            case 'orderNumber':
+                valA = (a.orderNumber || '').toLowerCase();
+                valB = (b.orderNumber || '').toLowerCase();
+                break;
+            case 'customerName':
+                valA = (a.customerName || '').toLowerCase();
+                valB = (b.customerName || '').toLowerCase();
+                break;
+            case 'item':
+                valA = (a.item || '').toLowerCase();
+                valB = (b.item || '').toLowerCase();
+                break;
+            default:
+                valA = a.deliveryDate;
+                valB = b.deliveryDate;
+        }
+
+        if (valA < valB) return outboundSortOrder === 'asc' ? -1 : 1;
+        if (valA > valB) return outboundSortOrder === 'asc' ? 1 : -1;
+        return 0;
+    });
+
     const listEl = document.getElementById('outbound-list');
     if (records.length === 0) {
         listEl.innerHTML = '<div class="card" style="text-align:center; color:#95a5a6;">沒有符合條件的訂單</div>';
         return;
     }
 
-    listEl.innerHTML = records.map(r => {
+    if (outboundViewMode === 'card') {
+        renderOutboundCards(listEl, records);
+    } else {
+        renderOutboundTable(listEl, records);
+    }
+}
+
+function renderOutboundCards(container, records) {
+    container.innerHTML = records.map(r => {
         const isDelivered = r.deliveryStatus === '已送達';
         const today = new Date(); today.setHours(0,0,0,0);
-        const delivDate = new Date(r.deliveryDate);
-        const diffDays = (delivDate - today) / (1000*60*60*24);
-        const isUrgent = !isDelivered && r.deliveryDate && diffDays <= 2;
+        const delivDate = parseDate(r.deliveryDate);
+        const diffDays = delivDate ? (delivDate - today) / (1000*60*60*24) : 999;
+        const isUrgent = !isDelivered && delivDate && diffDays <= 2;
 
         return `
         <div class="order-card ${isDelivered ? 'delivered' : ''}" style="${isUrgent ? 'border-left-color: var(--danger);' : ''}">
@@ -1366,31 +1596,99 @@ function renderOutboundList() {
                 </div>
             </div>
             <div class="order-actions">
-                ${isDelivered
-                    ? `<span style="color:var(--success); font-size:12px; font-weight:bold;">✓ 已送達 (${dateOnly(r.recordDateTime)})</span>`
-                    : `<button class="btn btn-success btn-sm" onclick="markDelivered(${r.rowIndex})">✓ 標記已送達</button>`
-                }
+${isDelivered
+    ? `<span style="color:var(--success); font-size:12px; font-weight:bold;">✓ 已送達 (${dateTimeFull(r.recordDateTime)})</span>`
+    : `<button class="btn btn-success btn-sm" onclick="markDelivered(${r.rowIndex})">✓ 標記已送達</button>`
+}
                 <button class="btn btn-sm" style="background:#8e44ad; color:white;" onclick="openOutboundRemarkModal(${r.rowIndex})">📝 Remark</button>
             </div>
         </div>`;
     }).join('');
 }
 
+function renderOutboundTable(container, records) {
+    container.innerHTML = `
+        <div class="card" style="padding:10px; margin-bottom:10px; background:var(--light-bg); font-weight:bold;">
+            共 ${records.length} 筆訂單
+        </div>
+        <table class="data-table" style="table-layout:auto; width:100%;">
+            <thead>
+                <tr>
+                    <th style="cursor:pointer;" onclick="setOutboundSort('orderNumber')">訂單編號 ${outboundSortField==='orderNumber'?(outboundSortOrder==='asc'?'↑':'↓'):''}</th>
+                    <th style="cursor:pointer;" onclick="setOutboundSort('deliveryDate')">送貨日期 ${outboundSortField==='deliveryDate'?(outboundSortOrder==='asc'?'↑':'↓'):''}</th>
+                    <th style="cursor:pointer;" onclick="setOutboundSort('customerName')">客人姓名 ${outboundSortField==='customerName'?(outboundSortOrder==='asc'?'↑':'↓'):''}</th>
+                    <th style="cursor:pointer;" onclick="setOutboundSort('item')">項目 ${outboundSortField==='item'?(outboundSortOrder==='asc'?'↑':'↓'):''}</th>
+                    <th>產品及數量</th>
+                    <th>送貨地址</th>
+                    <th>備註</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${records.map(r => {
+                    const isDelivered = r.deliveryStatus === '已送達';
+                    return `
+                    <tr>
+                        <td style="font-weight:bold; white-space:nowrap;">${r.orderNumber ? '#' + r.orderNumber : '-'}</td>
+                        <td style="white-space:nowrap;">${dateWithWeekday(r.deliveryDate)}</td>
+                        <td>${r.customerName || '-'}</td>
+                        <td>${r.item || '-'}</td>
+                        <td style="font-size:12px; white-space:pre-wrap;">${r.productQty || '-'}</td>
+                        <td style="font-size:12px;">${r.deliveryAddress || '-'}</td>
+                        <td style="font-size:12px;">${r.remark || '-'}</td>
+                        <td>
+                            <div style="display:flex; flex-direction:column; gap:4px;">
+${isDelivered 
+    ? `<div style="display:flex; flex-direction:column; align-items:center; gap:2px;">
+        <span class="badge badge-delivered">已送達</span>
+        <span style="font-size:10px; color:var(--success);">${dateTimeFull(r.recordDateTime)}</span>
+       </div>` 
+    : `<button class="btn btn-success btn-sm" onclick="markDelivered(${r.rowIndex})">送達</button>`
+}
+                                <button class="btn btn-sm" style="background:#8e44ad; color:white;" onclick="openOutboundRemarkModal(${r.rowIndex})">Remark</button>
+                            </div>
+                        </td>
+                    </tr>`;
+                }).join('')}
+            </tbody>
+        </table>
+    `;
+}
+
+function setOutboundSort(field) {
+    if (outboundSortField === field) {
+        outboundSortOrder = outboundSortOrder === 'asc' ? 'desc' : 'asc';
+    } else {
+        outboundSortField = field;
+        outboundSortOrder = 'asc';
+    }
+    renderOutboundPage(document.getElementById('mainContent'));
+}
+
 async function markDelivered(rowIndex) {
     if (!confirm('確認標記此訂單為已送達？')) return;
-    showLoading();
+    
+    // Optimistic UI Update: Update local data immediately
+    const recordIndex = recordsData.findIndex(r => r.rowIndex === rowIndex);
+    const nowStr = new Date().toISOString();
+    if (recordIndex !== -1) {
+        recordsData[recordIndex].deliveryStatus = '已送達';
+        recordsData[recordIndex].recordDateTime = nowStr;
+        renderOutboundList(); // Just re-render the list part
+        showToast('正在同步...', 'info');
+    }
+
     try {
-        const now = getNowStr();
         // K欄(col 11): 送貨進度, L欄(col 12): 紀錄日期與時間
         await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 11, value: '已送達' });
-        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 12, value: now });
+        await gasPost({ action: 'updateCell', sheet: 'Records', row: rowIndex, col: 12, value: nowStr });
+        showToast('✓ 已成功送達');
+        // No need to reload everything unless needed for other pages
+    } catch (e) {
+        showToast('同步失敗，請刷新頁面', 'error');
         await loadRecords();
         renderCurrentPage();
-        showToast('已標記為送達！');
-    } catch (e) {
-        showToast('更新失敗', 'error');
     }
-    hideLoading();
 }
 
 async function toggleDeliveryStatus(rowIndex, newStatus) {
@@ -1808,6 +2106,486 @@ async function saveRemarkEdit(rowIndex) {
 }
 
 // ============================================================
+// PAGE: 前綴管理 (Admin)
+// ============================================================
+function renderPrefixPage(container) {
+    container.innerHTML = `
+        <div class="page-title">🏷️ 前綴管理</div>
+        <div class="card">
+            <h3>新增前綴對應</h3>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>前綴 (例如: WL, SA, GD)</label>
+                    <input type="text" id="new-prefix" placeholder="輸入前綴">
+                </div>
+                <div class="form-group">
+                    <label>對應供應商名稱</label>
+                    <select id="new-prefix-supplier">
+                        <option value="">選擇供應商</option>
+                        ${configData.suppliers.map(s => `<option value="${s}">${s}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="form-group" style="display:flex; align-items:flex-end;">
+                    <button class="btn btn-primary" onclick="addPrefix()">新增對應</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h3>目前對應列表</h3>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>前綴</th>
+                        <th>供應商名稱</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="prefix-list-body">
+                    ${(configData.prefixes || []).map(p => `
+                    <tr>
+                        <td style="font-weight:bold;">${p.prefix}</td>
+                        <td>${p.supplier}</td>
+                        <td>
+                            <button class="btn btn-danger btn-sm" onclick="deletePrefix(${p.rowIndex})">刪除</button>
+                        </td>
+                    </tr>`).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+async function addPrefix() {
+    const prefix = document.getElementById('new-prefix').value.trim().toUpperCase();
+    const supplier = document.getElementById('new-prefix-supplier').value;
+    
+    if (!prefix || !supplier) {
+        showToast('請填寫前綴和選擇供應商', 'error');
+        return;
+    }
+    
+    showLoading();
+    try {
+        await gasPost({ action: 'append', sheet: 'Prefixes', values: [[prefix, supplier]] });
+        showToast('新增成功！');
+        await loadInitialData();
+    } catch (e) {
+        showToast('新增失敗', 'error');
+    }
+    hideLoading();
+}
+
+async function deletePrefix(rowIndex) {
+    if (!confirm('確定要刪除此對應嗎？')) return;
+    
+    showLoading();
+    try {
+        await gasPost({ action: 'deleteRow', sheet: 'Prefixes', row: rowIndex });
+        showToast('已刪除');
+        await loadInitialData();
+    } catch (e) {
+        showToast('刪除失敗', 'error');
+    }
+    hideLoading();
+}
+
+// ============================================================
+// PAGE: 團隊帳號 (Admin)
+// ============================================================
+function renderTeamPage(container) {
+    container.innerHTML = `
+        <div class="page-title">👤 團隊帳號</div>
+        <div class="team-container">
+            <div class="user-list">
+                ${isAdmin() ? `<button class="btn btn-primary btn-sm" style="width:100%; margin-bottom:15px;" onclick="createNewUser()">＋ 開新同事</button>` : ''}
+                <div id="team-list-content"></div>
+            </div>
+            <div class="user-detail" id="user-detail-content">
+                <div style="text-align:center; color:#95a5a6; padding-top:100px;">
+                    請左邊一個同事去管理，或 撳「＋ 開新同事」
+                </div>
+            </div>
+        </div>
+    `;
+    renderTeamList();
+    if (selectedUserEmail) {
+        selectUser(selectedUserEmail);
+    } else if (!isAdmin()) {
+        // Suppliers can only see themselves
+        selectUser(currentUser.email);
+    }
+}
+
+function renderTeamList() {
+    const listEl = document.getElementById('team-list-content');
+    if (!listEl) return;
+    
+    listEl.innerHTML = teamData.map(u => `
+        <div class="user-card ${selectedUserEmail === u.email ? 'active' : ''}" onclick="selectUser('${u.email}')">
+            <div class="u-name">${u.name}</div>
+            <div class="u-role">
+                ${u.email} <span class="u-badge ${u.role === 'Admin' ? 'admin' : 'supplier'}">${u.role}</span>
+            </div>
+        </div>
+    `).join('');
+}
+
+function selectUser(email) {
+    selectedUserEmail = email;
+    renderTeamList();
+    
+    const user = teamData.find(u => u.email === email);
+    const detailEl = document.getElementById('user-detail-content');
+    if (!user || !detailEl) return;
+    
+    const isSelf = currentUser.email === user.email;
+    const canEditRole = isAdmin() && !isSelf; // Admin can't change their own role to avoid locking out
+    
+    detailEl.innerHTML = `
+        <div style="margin-bottom:20px;">
+            <h3 style="margin-bottom:5px;">${user.name}</h3>
+            <p style="font-size:12px; color:#7f8c8d;">
+                登入名：${user.email} &nbsp;·&nbsp; 角色：${user.role}
+            </p>
+        </div>
+        
+        <div class="form-group">
+            <label>顯示名</label>
+            <input type="text" id="team-edit-name" value="${user.name}">
+        </div>
+        
+        <div class="form-group">
+            <label>級別 (角色)</label>
+            <select id="team-edit-role" ${!canEditRole ? 'disabled' : ''} onchange="toggleSupplierSelect()">
+                <option value="Admin" ${user.role === 'Admin' ? 'selected' : ''}>管理員</option>
+                <option value="Supplier" ${user.role !== 'Admin' ? 'selected' : ''}>供應商</option>
+            </select>
+        </div>
+        
+        <div class="form-group" id="team-supplier-group" style="display: ${user.role === 'Admin' ? 'none' : 'block'};">
+            <label>所屬公司 (供應商)</label>
+            <select id="team-edit-supplier" ${!isAdmin() ? 'disabled' : ''}>
+                <option value="">選擇供應商</option>
+                ${configData.suppliers.map(s => `<option value="${s}" ${user.supplier === s ? 'selected' : ''}>${s}</option>`).join('')}
+            </select>
+        </div>
+        
+        <div style="display:flex; gap:10px; margin-top:30px;">
+            <button class="btn btn-primary" style="flex:1; background:#b08d57;" onclick="saveUserChanges('${user.email}', ${user.rowIndex})">儲存改動</button>
+            <button class="btn btn-light" style="flex:1; background:#f0ede4;" onclick="openResetPasswordModal('${user.email}', ${user.rowIndex})">重設密碼</button>
+            ${isAdmin() && !isSelf ? `<button class="btn btn-danger" style="flex:1; background:#f0ede4; color:var(--danger);" onclick="deleteUser('${user.email}', ${user.rowIndex})">停用帳號</button>` : ''}
+        </div>
+    `;
+}
+
+function toggleSupplierSelect() {
+    const role = document.getElementById('team-edit-role').value;
+    document.getElementById('team-supplier-group').style.display = (role === 'Admin') ? 'none' : 'block';
+}
+
+async function saveUserChanges(email, rowIndex) {
+    const name = document.getElementById('team-edit-name').value.trim();
+    const role = document.getElementById('team-edit-role').value;
+    const supplier = (role === 'Admin') ? '' : document.getElementById('team-edit-supplier').value;
+    
+    if (!name) return showToast('請填寫顯示名', 'error');
+    if (role === 'Supplier' && !supplier) return showToast('請選擇所屬公司', 'error');
+    
+    showLoading();
+    try {
+        await gasPost({
+            action: 'saveUser',
+            row: rowIndex,
+            user: { name, role, supplier }
+        });
+        showToast('儲存成功！');
+        // Update local data
+        const user = teamData.find(u => u.email === email);
+        if (user) {
+            user.name = name;
+            user.role = role;
+            user.supplier = supplier;
+            if (currentUser.email === email) {
+                currentUser.name = name;
+                currentUser.role = role;
+                currentUser.supplier = supplier;
+                document.getElementById('userInfoDisplay').textContent = `${currentUser.name} (${currentUser.role})`;
+            }
+        }
+        renderTeamPage(document.getElementById('mainContent'));
+    } catch (e) {
+        showToast('儲存失敗', 'error');
+    }
+    hideLoading();
+}
+
+function openResetPasswordModal(email, rowIndex) {
+    const modalHtml = `
+        <button class="modal-close" onclick="closeModal()">✕</button>
+        <h3>🔐 重設密碼</h3>
+        <p style="font-size:12px; color:#7f8c8d; margin-bottom:15px;">用戶：${email}</p>
+        <div class="form-group">
+            <label>新密碼</label>
+            <input type="password" id="new-password" placeholder="輸入新密碼">
+        </div>
+        <div style="text-align:right; margin-top:20px;">
+            <button class="btn btn-primary" onclick="confirmResetPassword('${email}', ${rowIndex})">確認重設</button>
+        </div>
+    `;
+    showModal(modalHtml);
+}
+
+async function confirmResetPassword(email, rowIndex) {
+    const password = document.getElementById('new-password').value.trim();
+    if (!password) return showToast('請輸入新密碼', 'error');
+    
+    showLoading();
+    try {
+        await gasPost({
+            action: 'saveUser',
+            row: rowIndex,
+            user: { password: password }
+        });
+        showToast('密碼已重設！');
+        closeModal();
+    } catch (e) {
+        showToast('重設失敗', 'error');
+    }
+    hideLoading();
+}
+
+async function deleteUser(email, rowIndex) {
+    if (!confirm(`確定要停用帳號 ${email} 嗎？此操作將永久刪除該帳號。`)) return;
+    
+    showLoading();
+    try {
+        await gasPost({ action: 'deleteRow', sheet: 'Users', row: rowIndex });
+        showToast('帳號已停用');
+        teamData = teamData.filter(u => u.email !== email);
+        selectedUserEmail = null;
+        renderTeamPage(document.getElementById('mainContent'));
+    } catch (e) {
+        showToast('操作失敗', 'error');
+    }
+    hideLoading();
+}
+
+function createNewUser() {
+    selectedUserEmail = null;
+    renderTeamList();
+    const detailEl = document.getElementById('user-detail-content');
+    detailEl.innerHTML = `
+        <div style="margin-bottom:20px;">
+            <h3 style="margin-bottom:5px;">＋ 開新同事</h3>
+            <p style="font-size:12px; color:#7f8c8d;">請填寫新帳號資料</p>
+        </div>
+        
+        <div class="form-group">
+            <label>電子郵件 (登入名)</label>
+            <input type="email" id="new-user-email" placeholder="example@email.com">
+        </div>
+        
+        <div class="form-group">
+            <label>顯示名</label>
+            <input type="text" id="new-user-name" placeholder="同事姓名">
+        </div>
+
+        <div class="form-group">
+            <label>初始密碼</label>
+            <input type="text" id="new-user-password" value="123456">
+        </div>
+        
+        <div class="form-group">
+            <label>級別 (角色)</label>
+            <select id="new-user-role" onchange="toggleNewSupplierSelect()">
+                <option value="Admin">管理員</option>
+                <option value="Supplier" selected>供應商</option>
+            </select>
+        </div>
+        
+        <div class="form-group" id="new-user-supplier-group">
+            <label>所屬公司 (供應商)</label>
+            <select id="new-user-supplier">
+                <option value="">選擇供應商</option>
+                ${configData.suppliers.map(s => `<option value="${s}">${s}</option>`).join('')}
+            </select>
+        </div>
+        
+        <div style="margin-top:30px;">
+            <button class="btn btn-primary" style="width:100%; background:#b08d57;" onclick="submitNewUser()">建立帳號</button>
+        </div>
+    `;
+}
+
+function toggleNewSupplierSelect() {
+    const role = document.getElementById('new-user-role').value;
+    document.getElementById('new-user-supplier-group').style.display = (role === 'Admin') ? 'none' : 'block';
+}
+
+async function submitNewUser() {
+    const email = document.getElementById('new-user-email').value.trim().toLowerCase();
+    const name = document.getElementById('new-user-name').value.trim();
+    const password = document.getElementById('new-user-password').value.trim();
+    const role = document.getElementById('new-user-role').value;
+    const supplier = (role === 'Admin') ? '' : document.getElementById('new-user-supplier').value;
+    
+    if (!email || !name || !password) return showToast('請填寫完整資料', 'error');
+    if (role === 'Supplier' && !supplier) return showToast('請選擇所屬公司', 'error');
+    
+    showLoading();
+    try {
+        const result = await gasPost({
+            action: 'addUser',
+            user: { email, name, password, role, supplier }
+        });
+        if (result.success) {
+            showToast('帳號建立成功！');
+            await loadInitialData();
+            selectedUserEmail = email;
+            renderTeamPage(document.getElementById('mainContent'));
+        } else {
+            showToast(result.error || '建立失敗', 'error');
+        }
+    } catch (e) {
+        showToast('連線失敗', 'error');
+    }
+    hideLoading();
+}
+
+// ============================================================
+// PAGE: 系統配置 (Admin)
+// ============================================================
+function renderConfigPage(container) {
+    container.innerHTML = `
+        <div class="page-title">⚙️ 系統配置</div>
+        
+        <div class="card">
+            <h3>供應商 Report 月份規則</h3>
+            <p style="font-size:12px; color:#7f8c8d; margin-bottom:15px;">設定每個供應商的 Report 月份是根據「下單月份」還是「送貨月份」。</p>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>供應商</th>
+                        <th>Report 月份規則</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${configData.suppliers.map(s => {
+                        const rule = configData.reportRules[s] || '下單月份';
+                        return `
+                        <tr>
+                            <td style="font-weight:bold;">${s}</td>
+                            <td>
+                                <select id="rule-select-${s}" style="padding:4px; font-size:12px;">
+                                    <option value="下單月份" ${rule==='下單月份'?'selected':''}>下單月份 (登記時間)</option>
+                                    <option value="送貨月份" ${rule==='送貨月份'?'selected':''}>送貨月份</option>
+                                </select>
+                            </td>
+                            <td>
+                                <button class="btn btn-primary btn-sm" onclick="saveSupplierRule('${s}')">儲存設定</button>
+                            </td>
+                        </tr>`;
+                    }).join('')}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card">
+            <h3>新增供應商與項目</h3>
+            <p style="font-size:12px; color:#7f8c8d; margin-bottom:15px;">在此新增供應商及其對應的產品項目名稱。</p>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>供應商名稱</label>
+                    <input type="text" id="new-config-supplier" placeholder="例如: Saicho">
+                </div>
+                <div class="form-group">
+                    <label>項目名稱</label>
+                    <input type="text" id="new-config-item" placeholder="例如: Saicho 氣泡茶(750毫升)">
+                </div>
+                <div class="form-group" style="display:flex; align-items:flex-end;">
+                    <button class="btn btn-primary" onclick="addConfigPair()">新增配置</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h3>目前供應商與項目列表</h3>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>供應商</th>
+                        <th>項目名稱</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="config-list-body">
+                    ${(configData.configPairs || []).map(p => `
+                    <tr>
+                        <td style="font-weight:bold;">${p.supplier}</td>
+                        <td>${p.item}</td>
+                        <td>
+                            <button class="btn btn-danger btn-sm" onclick="deleteConfigPair(${p.rowIndex})">刪除</button>
+                        </td>
+                    </tr>`).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+async function saveSupplierRule(supplier) {
+    const rule = document.getElementById(`rule-select-${supplier}`).value;
+    showLoading();
+    try {
+        await gasPost({ action: 'updateSupplierRule', supplier: supplier, rule: rule });
+        showToast(`${supplier} 規則已更新`);
+        await loadInitialData();
+        renderCurrentPage();
+    } catch (e) {
+        showToast('儲存失敗', 'error');
+    }
+    hideLoading();
+}
+
+async function addConfigPair() {
+    const supplier = document.getElementById('new-config-supplier').value.trim();
+    const item = document.getElementById('new-config-item').value.trim();
+    
+    if (!supplier || !item) {
+        showToast('請填寫供應商和項目名稱', 'error');
+        return;
+    }
+    
+    showLoading();
+    try {
+        await gasPost({ action: 'append', sheet: 'Config', values: [[supplier, item]] });
+        showToast('新增成功！');
+        await loadInitialData();
+        renderCurrentPage();
+    } catch (e) {
+        showToast('新增失敗', 'error');
+    }
+    hideLoading();
+}
+
+async function deleteConfigPair(rowIndex) {
+    if (!confirm('確定要刪除此配置嗎？這將影響入庫時的選項。')) return;
+    
+    showLoading();
+    try {
+        await gasPost({ action: 'deleteRow', sheet: 'Config', row: rowIndex });
+        showToast('已刪除');
+        await loadInitialData();
+        renderCurrentPage();
+    } catch (e) {
+        showToast('刪除失敗', 'error');
+    }
+    hideLoading();
+}
+
+// ============================================================
 // PAGE: 流水帳管理 (Admin)
 // ============================================================
 let ledgerCurrentPage = 1;
@@ -2077,7 +2855,8 @@ async function deleteLedgerRecord(rowIndex) {
 // ============================================================
 function getVisibleRecords() {
     if (isAdmin()) return [...recordsData];
-    return recordsData.filter(r => r.supplier === currentUser.role);
+    // For suppliers, filter by their associated supplier company
+    return recordsData.filter(r => r.supplier === currentUser.supplier);
 }
 
 // ============================================================
