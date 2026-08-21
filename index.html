@@ -485,6 +485,10 @@ let selectedUserEmail = null;
 let outboundViewMode = 'card';
 let outboundSortField = 'deliveryDate';
 let outboundSortOrder = 'asc';
+let ledgerSortField = 'timestamp';
+let ledgerSortOrder = 'desc';
+let monthlySortField = 'deliveryDate';
+let monthlySortOrder = 'asc';
 let currentPage = 'outbound';
 
 // ============================================================
@@ -1776,11 +1780,19 @@ function renderMonthlyContent() {
         return recordMonth === filterMonth;
     });
 
-    // Sort by delivery date
+    // Sorting
     records.sort((a, b) => {
-        const da = parseDate(a.deliveryDate) || new Date('9999-12-31');
-        const db = parseDate(b.deliveryDate) || new Date('9999-12-31');
-        return da - db;
+        let valA = a[monthlySortField] || '';
+        let valB = b[monthlySortField] || '';
+        
+        if (monthlySortField === 'deliveryDate') {
+            valA = parseDate(valA) || new Date(0);
+            valB = parseDate(valB) || new Date(0);
+        }
+        
+        if (valA < valB) return monthlySortOrder === 'asc' ? -1 : 1;
+        if (valA > valB) return monthlySortOrder === 'asc' ? 1 : -1;
+        return 0;
     });
 
     const contentEl = document.getElementById('monthly-content');
@@ -1796,10 +1808,10 @@ function renderMonthlyContent() {
         <table class="data-table" style="table-layout:auto; width:100%;">
             <thead>
                 <tr>
-                    <th>訂單編號</th>
-                    <th>送貨日期</th>
-                    <th>客人姓名</th>
-                    <th>項目</th>
+                    <th style="cursor:pointer;" onclick="setMonthlySort('orderNumber')">訂單編號 ${monthlySortField==='orderNumber'?(monthlySortOrder==='asc'?'↑':'↓'):''}</th>
+                    <th style="cursor:pointer;" onclick="setMonthlySort('deliveryDate')">送貨日期 ${monthlySortField==='deliveryDate'?(monthlySortOrder==='asc'?'↑':'↓'):''}</th>
+                    <th style="cursor:pointer;" onclick="setMonthlySort('customerName')">客人姓名 ${monthlySortField==='customerName'?(monthlySortOrder==='asc'?'↑':'↓'):''}</th>
+                    <th style="cursor:pointer;" onclick="setMonthlySort('item')">項目 ${monthlySortField==='item'?(monthlySortOrder==='asc'?'↑':'↓'):''}</th>
                     <th>產品及數量</th>
                     <th>送貨地址</th>
                     <th>備註</th>
@@ -1826,6 +1838,16 @@ function renderMonthlyContent() {
 // ============================================================
 // PAGE: 訂單近況 (Admin)
 // ============================================================
+function setMonthlySort(field) {
+    if (monthlySortField === field) {
+        monthlySortOrder = monthlySortOrder === 'asc' ? 'desc' : 'asc';
+    } else {
+        monthlySortField = field;
+        monthlySortOrder = 'asc';
+    }
+    renderMonthlyContent();
+}
+
 function renderStatusPage(container) {
     const currentMonth = getCurrentMonth();
 
@@ -2620,15 +2642,15 @@ function renderLedgerTable() {
     const monthFilter = document.getElementById('ledger-month-filter').value;
 
     let records = getVisibleRecords();
-    records.sort((a, b) => new Date(b.timestamp || '0000-01-01') - new Date(a.timestamp || '0000-01-01'));
 
+    // Filtering
     if (search) {
         records = records.filter(r =>
-            r.customerName.toLowerCase().includes(search) ||
-            r.supplier.toLowerCase().includes(search) ||
-            r.item.toLowerCase().includes(search) ||
-            r.productQty.toLowerCase().includes(search) ||
-            r.orderNumber.toLowerCase().includes(search)
+            (r.customerName || '').toLowerCase().includes(search) ||
+            (r.supplier || '').toLowerCase().includes(search) ||
+            (r.item || '').toLowerCase().includes(search) ||
+            (r.productQty || '').toLowerCase().includes(search) ||
+            (r.orderNumber || '').toLowerCase().includes(search)
         );
     }
     if (supplierFilter) {
@@ -2640,24 +2662,30 @@ function renderLedgerTable() {
         records = records.filter(r => !r.reportMonth);
     }
     if (monthFilter) {
-        // Normalize comparison: monthFilter is 'YYYY-MM', reportMonth may be various formats
         records = records.filter(r => {
             if (!r.reportMonth) return false;
-            // Try to extract YYYY-MM from reportMonth
             const isoMatch = r.reportMonth.match(/(\d{4})-(\d{2})/);
             if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}` === monthFilter;
-            // Try Chinese format: 2026年08月
             const cnMatch = r.reportMonth.match(/(\d{4})年(\d{1,2})月/);
             if (cnMatch) return `${cnMatch[1]}-${String(cnMatch[2]).padStart(2,'0')}` === monthFilter;
-            // Try Date.toString() format
-            const fullMatch = r.reportMonth.match(/[A-Za-z]{3}\s+([A-Za-z]{3})\s+\d{1,2}\s+(\d{4})/);
-            if (fullMatch) {
-                const months = {Jan:'01',Feb:'02',Mar:'03',Apr:'04',May:'05',Jun:'06',Jul:'07',Aug:'08',Sep:'09',Oct:'10',Nov:'11',Dec:'12'};
-                return `${fullMatch[2]}-${months[fullMatch[1]] || '01'}` === monthFilter;
-            }
             return r.reportMonth === monthFilter;
         });
     }
+
+    // Sorting
+    records.sort((a, b) => {
+        let valA = a[ledgerSortField] || '';
+        let valB = b[ledgerSortField] || '';
+        
+        if (ledgerSortField === 'timestamp' || ledgerSortField === 'deliveryDate') {
+            valA = parseDate(valA) || new Date(0);
+            valB = parseDate(valB) || new Date(0);
+        }
+        
+        if (valA < valB) return ledgerSortOrder === 'asc' ? -1 : 1;
+        if (valA > valB) return ledgerSortOrder === 'asc' ? 1 : -1;
+        return 0;
+    });
 
     const tableContainer = document.getElementById('ledger-table-container');
     if (records.length === 0) {
@@ -2684,15 +2712,15 @@ function renderLedgerTable() {
         <table class="data-table" style="table-layout:auto; width:100%;">
             <thead>
                 <tr>
-                    <th>日期</th>
-                    <th>供應商</th>
-                    <th>項目</th>
-                    <th>訂單編號</th>
-                    <th>客人</th>
+                    <th style="cursor:pointer;" onclick="setLedgerSort('timestamp')">日期 ${ledgerSortField==='timestamp'?(ledgerSortOrder==='asc'?'↑':'↓'):''}</th>
+                    <th style="cursor:pointer;" onclick="setLedgerSort('supplier')">供應商 ${ledgerSortField==='supplier'?(ledgerSortOrder==='asc'?'↑':'↓'):''}</th>
+                    <th style="cursor:pointer;" onclick="setLedgerSort('item')">項目 ${ledgerSortField==='item'?(ledgerSortOrder==='asc'?'↑':'↓'):''}</th>
+                    <th style="cursor:pointer;" onclick="setLedgerSort('orderNumber')">訂單編號 ${ledgerSortField==='orderNumber'?(ledgerSortOrder==='asc'?'↑':'↓'):''}</th>
+                    <th style="cursor:pointer;" onclick="setLedgerSort('customerName')">客人 ${ledgerSortField==='customerName'?(ledgerSortOrder==='asc'?'↑':'↓'):''}</th>
                     <th>數量</th>
-                    <th>送貨日期</th>
+                    <th style="cursor:pointer;" onclick="setLedgerSort('deliveryDate')">送貨日期 ${ledgerSortField==='deliveryDate'?(ledgerSortOrder==='asc'?'↑':'↓'):''}</th>
                     <th>送貨進度</th>
-                    <th>Report月份</th>
+                    <th style="cursor:pointer;" onclick="setLedgerSort('reportMonth')">Report月份 ${ledgerSortField==='reportMonth'?(ledgerSortOrder==='asc'?'↑':'↓'):''}</th>
                     <th>提交供應商</th>
                     <th>操作</th>
                 </tr>
@@ -2731,6 +2759,16 @@ function renderLedgerTable() {
 
 function ledgerGoPage(page) {
     ledgerCurrentPage = page;
+    renderLedgerTable();
+}
+
+function setLedgerSort(field) {
+    if (ledgerSortField === field) {
+        ledgerSortOrder = ledgerSortOrder === 'asc' ? 'desc' : 'asc';
+    } else {
+        ledgerSortField = field;
+        ledgerSortOrder = 'asc';
+    }
     renderLedgerTable();
 }
 
